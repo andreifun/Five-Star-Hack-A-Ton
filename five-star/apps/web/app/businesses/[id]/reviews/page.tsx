@@ -108,12 +108,14 @@ export default function ReviewsPage() {
           </p>
         ) : (
           <div className="space-y-3">
-            {[
-              ...results.filter((r) => r.text),
-              ...results.filter((r) => !r.text),
-            ].map((review) => (
-              <ReviewCard key={review._id} review={review} />
-            ))}
+            {(() => {
+              const reviewsWithText = results.filter((r) => r.text)
+              const reviewsWithoutText = results.filter((r) => !r.text)
+              const sortedReviews = [...reviewsWithText, ...reviewsWithoutText]
+              return sortedReviews.map((review) => (
+                <ReviewCard key={review._id} review={review} />
+              ))
+            })()}
           </div>
         )}
 
