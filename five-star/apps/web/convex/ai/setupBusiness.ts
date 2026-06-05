@@ -139,7 +139,7 @@ ${html.slice(0, 15000)}`,
         resolvedUrl = r.url;
       }
 
-      const dataIdMatch = resolvedUrl.match(/!1s(0x[0-9a-f]+:[0-9a-f]+)/i);
+      const dataIdMatch = resolvedUrl.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
       if (!dataIdMatch) {
         throw new Error(`Could not extract Google Maps place ID from URL: ${sl.google}`);
       }
