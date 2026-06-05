@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { requireBusinessOwner } from "./helpers";
 
 export const recompute = internalMutation({
   args: { businessId: v.id("businesses") },
@@ -107,6 +107,7 @@ export const recompute = internalMutation({
 export const getByBusiness = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
     return await ctx.db
       .query("businessMetrics")
       .withIndex("by_businessId", (q) =>

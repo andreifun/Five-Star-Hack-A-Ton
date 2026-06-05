@@ -1,6 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireBusinessOwner, requireCurrentUser } from "./helpers";
 import { internal } from "./_generated/api";
 
@@ -41,6 +41,8 @@ export const create = mutation({
         facebook: v.optional(v.string()),
         tripadvisor: v.optional(v.string()),
         google: v.optional(v.string()),
+        booking: v.optional(v.string()),
+        yelp: v.optional(v.string()),
       }),
     ),
   },
@@ -82,6 +84,8 @@ export const create = mutation({
       lastComputedAt: Date.now(),
     });
 
+    await ctx.scheduler.runAfter(0, internal.ai.setupBusiness.run, { businessId });
+
     return businessId;
   },
 });
@@ -109,6 +113,8 @@ export const update = mutation({
         facebook: v.optional(v.string()),
         tripadvisor: v.optional(v.string()),
         google: v.optional(v.string()),
+        booking: v.optional(v.string()),
+        yelp: v.optional(v.string()),
       }),
     ),
   },
@@ -151,10 +157,78 @@ export const listByCurrentUser = query({
   },
 });
 
+export const updateInternal = internalMutation({
+  args: {
+    businessId: v.id("businesses"),
+    description: v.optional(v.string()),
+    address: v.optional(v.string()),
+    city: v.optional(v.string()),
+    country: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    openingHours: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { businessId, ...fields } = args;
+    await ctx.db.patch(businessId, fields);
+  },
+});
+
+export const listAllByCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_tokenIdentifier", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier),
+      )
+      .unique();
+    if (!user) return [];
+    return await ctx.db
+      .query("businesses")
+      .withIndex("by_ownerId_and_isActive", (q) =>
+        q.eq("ownerId", user._id).eq("isActive", true),
+      )
+      .order("desc")
+      .collect();
+  },
+});
+
+/**
+ * Fetches a business together with its metrics **without** an ownership check.
+ *
+ * For use only from internal/scheduled actions (setup pipeline, tip generation),
+ * which run without a user identity. Never expose this to clients — the public
+ * `getById` enforces ownership.
+ */
+export const getByIdInternal = internalQuery({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const business = await ctx.db.get(args.businessId);
+    if (!business) return null;
+    const metrics = await ctx.db
+      .query("businessMetrics")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .unique();
+    return { ...business, metrics };
+  },
+});
+
 export const getById = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {
-    const { business } = await requireBusinessOwner(ctx, args.businessId);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_tokenIdentifier", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier),
+      )
+      .unique();
+    if (!user) return null;
+    const business = await ctx.db.get(args.businessId);
+    if (!business || !business.isActive || business.ownerId !== user._id) return null;
     const metrics = await ctx.db
       .query("businessMetrics")
       .withIndex("by_businessId", (q) =>

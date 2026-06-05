@@ -1,6 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireBusinessOwner } from "./helpers";
 import { internal } from "./_generated/api";
 
@@ -79,6 +79,34 @@ export const addNotes = mutation({
     if (!tip) throw new Error("Tip not found");
     await requireBusinessOwner(ctx, tip.businessId);
     await ctx.db.patch(args.tipId, { notes: args.notes });
+  },
+});
+
+/**
+ * Lists tips for a business **without** an ownership check, for use from
+ * internal/scheduled actions only (e.g. tip generation, chat context).
+ */
+export const listByStatusInternal = internalQuery({
+  args: {
+    businessId: v.id("businesses"),
+    status: v.optional(statusValidator),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    if (args.status) {
+      return await ctx.db
+        .query("tips")
+        .withIndex("by_businessId_and_status", (q) =>
+          q.eq("businessId", args.businessId).eq("status", args.status!),
+        )
+        .order("desc")
+        .take(args.limit ?? 20);
+    }
+    return await ctx.db
+      .query("tips")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .order("desc")
+      .take(args.limit ?? 20);
   },
 });
 

@@ -1,6 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { requireBusinessOwner } from "./helpers";
 
 export const create = mutation({
@@ -21,6 +21,21 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireBusinessOwner(ctx, args.businessId);
+    return await ctx.db.insert("products", args);
+  },
+});
+
+export const createInternal = internalMutation({
+  args: {
+    businessId: v.id("businesses"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    category: v.optional(v.string()),
+    price: v.optional(v.number()),
+    isAvailable: v.boolean(),
+    isSignatureDish: v.boolean(),
+  },
+  handler: async (ctx, args) => {
     return await ctx.db.insert("products", args);
   },
 });

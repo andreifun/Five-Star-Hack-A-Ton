@@ -1,7 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
 import { createGatewayProvider } from "@ai-sdk/gateway";
@@ -29,7 +29,34 @@ interface GeneratedTip {
   sourceReviewIndices: number[];
 }
 
-export const generateTipsForBusiness = action({
+/**
+ * Public, ownership-checked entry point for regenerating tips from the UI.
+ * Verifies the caller owns the business (via the auth-gated `getById`, whose
+ * identity propagates from the authenticated client) before running the
+ * internal generation action.
+ */
+export const regenerate = action({
+  args: {
+    businessId: v.id("businesses"),
+    model: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args: { businessId: Id<"businesses">; model?: string },
+  ): Promise<void> => {
+    const business = await ctx.runQuery(api.businesses.getById, {
+      businessId: args.businessId,
+    });
+    if (!business) throw new Error("Business not found or access denied");
+
+    await ctx.runAction(internal.ai.generateTips.generateTipsForBusiness, {
+      businessId: args.businessId,
+      model: args.model,
+    });
+  },
+});
+
+export const generateTipsForBusiness = internalAction({
   args: {
     businessId: v.id("businesses"),
     model: v.optional(v.string()),
@@ -40,24 +67,22 @@ export const generateTipsForBusiness = action({
   ): Promise<void> => {
     const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
 
-    const businessWithMetrics = (await ctx.runQuery(api.businesses.getById, {
-      businessId: args.businessId,
-    })) as ({ metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">) | null;
+    const businessWithMetrics = (await ctx.runQuery(
+      internal.businesses.getByIdInternal,
+      { businessId: args.businessId },
+    )) as ({ metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">) | null;
 
-    if (!businessWithMetrics) throw new Error("Business not found or access denied");
+    if (!businessWithMetrics) throw new Error("Business not found");
 
-    const recentReviewsPage = await ctx.runQuery(api.reviews.listByBusiness, {
+    const reviews = (await ctx.runQuery(internal.reviews.listRecentInternal, {
       businessId: args.businessId,
-      paginationOpts: { numItems: 50, cursor: null },
-    });
-    const reviews = (recentReviewsPage as { page: Doc<"reviews">[] }).page;
+      limit: 50,
+    })) as Doc<"reviews">[];
 
-    const existingTipsPage = await ctx.runQuery(api.tips.listByBusiness, {
-      businessId: args.businessId,
-      paginationOpts: { numItems: 20, cursor: null },
-      status: "pending",
-    });
-    const pendingTips = (existingTipsPage as { page: Doc<"tips">[] }).page;
+    const pendingTips = (await ctx.runQuery(
+      internal.tips.listByStatusInternal,
+      { businessId: args.businessId, status: "pending", limit: 20 },
+    )) as Doc<"tips">[];
 
     const businessContext = `
 Business: ${businessWithMetrics.name}

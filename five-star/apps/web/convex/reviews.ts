@@ -1,8 +1,8 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireBusinessOwner } from "./helpers";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const sourceValidator = v.union(
   v.literal("google"),
@@ -46,6 +46,45 @@ export const create = mutation({
   },
 });
 
+export const bulkImportInternal = internalMutation({
+  args: {
+    businessId: v.id("businesses"),
+    reviews: v.array(
+      v.object({
+        source: sourceValidator,
+        rating: v.number(),
+        title: v.optional(v.string()),
+        text: v.optional(v.string()),
+        reviewerName: v.optional(v.string()),
+        reviewDate: v.number(),
+        isPublic: v.boolean(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const batch = args.reviews.slice(0, 50);
+    const remaining = args.reviews.slice(50);
+
+    for (const review of batch) {
+      await ctx.db.insert("reviews", {
+        businessId: args.businessId,
+        ...review,
+      });
+    }
+
+    if (remaining.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.reviews.bulkImportInternal, {
+        businessId: args.businessId,
+        reviews: remaining,
+      });
+    }
+
+    await ctx.scheduler.runAfter(0, internal.businessMetrics.recompute, {
+      businessId: args.businessId,
+    });
+  },
+});
+
 export const bulkImport = mutation({
   args: {
     businessId: v.id("businesses"),
@@ -73,21 +112,23 @@ export const bulkImport = mutation({
     const batch = args.reviews.slice(0, 50);
     const remaining = args.reviews.slice(50);
 
+    // Build a set of already-imported external IDs once, rather than querying
+    // per review. Keyed by `source:externalId` to scope dedup per source.
+    const existingExternalIds = new Set<string>();
+    const existing = await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .take(5000);
+    for (const r of existing) {
+      if (r.externalId) existingExternalIds.add(`${r.source}:${r.externalId}`);
+    }
+
     let imported = 0;
     for (const review of batch) {
       if (review.externalId && review.source !== "manual") {
-        const existing = await ctx.db
-          .query("reviews")
-          .withIndex("by_businessId_and_source", (q) =>
-            q
-              .eq("businessId", args.businessId)
-              .eq("source", review.source),
-          )
-          .take(1000);
-        const duplicate = existing.find(
-          (r) => r.externalId === review.externalId,
-        );
-        if (duplicate) continue;
+        const key = `${review.source}:${review.externalId}`;
+        if (existingExternalIds.has(key)) continue;
+        existingExternalIds.add(key);
       }
       await ctx.db.insert("reviews", {
         businessId: args.businessId,
@@ -97,7 +138,7 @@ export const bulkImport = mutation({
     }
 
     if (remaining.length > 0) {
-      await ctx.scheduler.runAfter(0, internal.reviews.bulkImport, {
+      await ctx.scheduler.runAfter(0, api.reviews.bulkImport, {
         businessId: args.businessId,
         reviews: remaining,
       });
@@ -128,6 +169,26 @@ export const update = mutation({
   },
 });
 
+/**
+ * Lists recent reviews for a business **without** an ownership check, for use
+ * from internal/scheduled actions only (e.g. tip generation, chat context).
+ */
+export const listRecentInternal = internalQuery({
+  args: {
+    businessId: v.id("businesses"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId_and_reviewDate", (q) =>
+        q.eq("businessId", args.businessId),
+      )
+      .order("desc")
+      .take(args.limit ?? 50);
+  },
+});
+
 export const listByBusiness = query({
   args: {
     businessId: v.id("businesses"),
@@ -136,6 +197,7 @@ export const listByBusiness = query({
     sentiment: v.optional(sentimentValidator),
   },
   handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
     if (args.source) {
       return await ctx.db
         .query("reviews")
@@ -169,6 +231,7 @@ export const searchByText = query({
     source: v.optional(sourceValidator),
   },
   handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
     return await ctx.db
       .query("reviews")
       .withSearchIndex("search_text", (q) => {

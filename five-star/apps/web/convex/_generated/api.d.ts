@@ -10,6 +10,7 @@
 
 import type * as ai_chat from "../ai/chat.js";
 import type * as ai_generateTips from "../ai/generateTips.js";
+import type * as ai_setupBusiness from "../ai/setupBusiness.js";
 import type * as businessMetrics from "../businessMetrics.js";
 import type * as businesses from "../businesses.js";
 import type * as chatMessages from "../chatMessages.js";
@@ -17,6 +18,7 @@ import type * as chatThreads from "../chatThreads.js";
 import type * as helpers from "../helpers.js";
 import type * as products from "../products.js";
 import type * as reviews from "../reviews.js";
+import type * as setupTasks from "../setupTasks.js";
 import type * as tips from "../tips.js";
 import type * as users from "../users.js";
 
@@ -29,6 +31,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "ai/chat": typeof ai_chat;
   "ai/generateTips": typeof ai_generateTips;
+  "ai/setupBusiness": typeof ai_setupBusiness;
   businessMetrics: typeof businessMetrics;
   businesses: typeof businesses;
   chatMessages: typeof chatMessages;
@@ -36,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   helpers: typeof helpers;
   products: typeof products;
   reviews: typeof reviews;
+  setupTasks: typeof setupTasks;
   tips: typeof tips;
   users: typeof users;
 }>;

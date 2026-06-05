@@ -35,6 +35,8 @@ export default defineSchema({
         facebook: v.optional(v.string()),
         tripadvisor: v.optional(v.string()),
         google: v.optional(v.string()),
+        booking: v.optional(v.string()),
+        yelp: v.optional(v.string()),
       }),
     ),
     openingHours: v.optional(v.string()),
@@ -192,6 +194,32 @@ export default defineSchema({
     .index("by_businessId", ["businessId"])
     .index("by_businessId_and_isArchived", ["businessId", "isArchived"])
     .index("by_businessId_and_lastMessageAt", ["businessId", "lastMessageAt"]),
+
+  setupTasks: defineTable({
+    businessId: v.id("businesses"),
+    type: v.union(
+      v.literal("fetch_website"),
+      v.literal("fetch_google"),
+      v.literal("fetch_tripadvisor"),
+      v.literal("fetch_booking"),
+      v.literal("fetch_yelp"),
+      v.literal("discover_products"),
+      v.literal("generate_tips"),
+      v.literal("finalize"),
+    ),
+    label: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    message: v.optional(v.string()),
+    order: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_businessId", ["businessId"]),
 
   chatMessages: defineTable({
     threadId: v.id("chatThreads"),
