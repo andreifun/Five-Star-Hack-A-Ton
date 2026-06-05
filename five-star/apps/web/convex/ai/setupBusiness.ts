@@ -130,102 +130,92 @@ ${html.slice(0, 15000)}`,
       if (!sl.google) return;
 
       const serpApiKey = process.env.SERPAPI_API_KEY;
-      const placeIdMatch = sl.google.match(/ChIJ[A-Za-z0-9_-]+/);
+      if (!serpApiKey) throw new Error("SERPAPI_API_KEY is not configured");
 
-      if (serpApiKey && placeIdMatch) {
-        const placeId = placeIdMatch[0];
-        const allReviews: Array<{
-          rating: number;
-          reviewerName?: string;
-          text?: string;
-          reviewDate: number;
-        }> = [];
+      // Resolve short URLs (maps.app.goo.gl) to the full URL to extract the data_id
+      let resolvedUrl = sl.google;
+      if (sl.google.includes("maps.app.goo.gl")) {
+        const r = await fetch(sl.google, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(10000) });
+        resolvedUrl = r.url;
+      }
 
-        let nextPageToken: string | undefined;
-        do {
-          const params = new URLSearchParams({
-            engine: "google_maps_reviews",
-            place_id: placeId,
-            api_key: serpApiKey,
-            hl: "en",
-          });
-          if (nextPageToken) params.set("next_page_token", nextPageToken);
+      const dataIdMatch = resolvedUrl.match(/!1s(0x[0-9a-f]+:[0-9a-f]+)/i);
+      if (!dataIdMatch) {
+        throw new Error(`Could not extract Google Maps place ID from URL: ${sl.google}`);
+      }
+      const dataId = dataIdMatch[1];
 
-          const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
-            signal: AbortSignal.timeout(15000),
-          });
-          if (!resp.ok) break;
+      const allReviews: Array<{
+        rating: number;
+        reviewerName?: string;
+        text?: string;
+        reviewDate: number;
+      }> = [];
 
-          const data = (await resp.json()) as {
-            reviews?: Array<{
-              rating?: number;
-              snippet?: string;
-              user?: { name?: string };
-              iso_date?: string;
-            }>;
-            serpapi_pagination?: { next_page_token?: string };
-            place_info?: { address?: string; phone?: string };
-          };
-
-          // Extract profile info from first page
-          if (!nextPageToken && data.place_info) {
-            const patch: Record<string, string> = {};
-            if (data.place_info.address && !business.address) patch.address = data.place_info.address;
-            if (data.place_info.phone && !business.phone) patch.phone = data.place_info.phone;
-            if (Object.keys(patch).length > 0) {
-              await ctx.runMutation(internal.businesses.updateInternal, {
-                businessId: business._id,
-                ...patch,
-              });
-            }
-          }
-
-          for (const r of data.reviews ?? []) {
-            allReviews.push({
-              rating: Math.max(1, Math.min(5, Math.round(r.rating ?? 3))),
-              reviewerName: r.user?.name,
-              text: r.snippet,
-              reviewDate: r.iso_date ? new Date(r.iso_date).getTime() : Date.now(),
-            });
-          }
-
-          nextPageToken = data.serpapi_pagination?.next_page_token;
-        } while (nextPageToken);
-
-        if (allReviews.length > 0) {
-          await ctx.runMutation(internal.reviews.bulkImportInternal, {
-            businessId: business._id,
-            reviews: allReviews.map((r) => ({ ...r, source: "google" as const, isPublic: true as const })),
-          });
-        }
-      } else {
-        // Fallback: plain fetch + LLM for profile data only
-        const html = await safelyFetchUrl(sl.google);
-        if (!html) return;
-        const { text } = await generateText({
-          model: gateway(MODEL_ID),
-          prompt: `Extract from this Google Maps page HTML: address (string), phone (string), openingHours (string). Output valid JSON only.
-
-HTML:
-${html.slice(0, 15000)}`,
-          maxOutputTokens: 256,
+      let nextPageToken: string | undefined;
+      let isFirstPage = true;
+      do {
+        const params = new URLSearchParams({
+          engine: "google_maps_reviews",
+          data_id: dataId,
+          api_key: serpApiKey,
+          hl: "en",
         });
-        try {
-          const parsed = JSON.parse(text);
+        if (nextPageToken) params.set("next_page_token", nextPageToken);
+
+        const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!resp.ok) {
+          const body = await resp.text();
+          throw new Error(`SerpAPI error: ${resp.status} ${body}`);
+        }
+
+        const data = (await resp.json()) as {
+          reviews?: Array<{
+            rating?: number;
+            snippet?: string;
+            user?: { name?: string };
+            iso_date?: string;
+          }>;
+          serpapi_pagination?: { next_page_token?: string };
+          place_info?: { address?: string; phone?: string };
+        };
+
+        // Extract profile info from first page
+        if (isFirstPage && data.place_info) {
           const patch: Record<string, string> = {};
-          if (parsed.address && !business.address) patch.address = parsed.address;
-          if (parsed.phone && !business.phone) patch.phone = parsed.phone;
-          if (parsed.openingHours && !business.openingHours) patch.openingHours = parsed.openingHours;
+          if (data.place_info.address && !business.address) patch.address = data.place_info.address;
+          if (data.place_info.phone && !business.phone) patch.phone = data.place_info.phone;
           if (Object.keys(patch).length > 0) {
             await ctx.runMutation(internal.businesses.updateInternal, {
               businessId: business._id,
               ...patch,
             });
           }
-        } catch {
-          // Unparseable — skip quietly
         }
-      }
+
+        if (isFirstPage && (!data.reviews || data.reviews.length === 0)) {
+          throw new Error("No reviews found for this location");
+        }
+
+        for (const r of data.reviews ?? []) {
+          allReviews.push({
+            rating: Math.max(1, Math.min(5, Math.round(r.rating ?? 3))),
+            reviewerName: r.user?.name,
+            text: r.snippet,
+            reviewDate: r.iso_date ? new Date(r.iso_date).getTime() : Date.now(),
+          });
+        }
+
+        nextPageToken = data.serpapi_pagination?.next_page_token;
+        isFirstPage = false;
+      } while (nextPageToken);
+
+      await ctx.runMutation(internal.reviews.bulkImportInternal, {
+        businessId: business._id,
+        reviews: allReviews.map((r) => ({ ...r, source: "google" as const, isPublic: true as const })),
+      });
       break;
     }
 
