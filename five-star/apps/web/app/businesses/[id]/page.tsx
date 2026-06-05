@@ -511,9 +511,11 @@ export default function DashboardPage() {
             <p className="text-sm text-muted-foreground">No reviews imported yet.</p>
           ) : (
             <div className="space-y-3">
-              {recentReviews.results.map((review) => (
-                <ReviewCard key={review._id} review={review} />
-              ))}
+              {[...recentReviews.results]
+                .sort((a, b) => (b.text ? 1 : 0) - (a.text ? 1 : 0))
+                .map((review) => (
+                  <ReviewCard key={review._id} review={review} />
+                ))}
               {recentReviews.status === "CanLoadMore" && (
                 <Button
                   variant="outline"
