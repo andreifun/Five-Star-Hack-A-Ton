@@ -11,7 +11,7 @@ const gateway = createGatewayProvider({
   apiKey: process.env.AI_GATEWAY_API_KEY,
 });
 
-const MODEL_ID = "anthropic/claude-sonnet-4-5";
+const MODEL_ID = "minimax/m3";
 
 async function safelyFetchUrl(url: string): Promise<string> {
   try {

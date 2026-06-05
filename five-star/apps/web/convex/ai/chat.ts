@@ -27,7 +27,7 @@ export const sendMessage = action({
       model?: string;
     },
   ): Promise<{ content: string; messageId: Id<"chatMessages">; isError: boolean }> => {
-    const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
+    const modelId = args.model ?? "minimax/m3";
 
     // Verify ownership before writing anything
     const businessWithMetrics = (await ctx.runQuery(api.businesses.getById, {
