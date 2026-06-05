@@ -1,14 +1,12 @@
 import { ClerkProvider } from "@clerk/nextjs"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Geist, Geist_Mono, Outfit } from "next/font/google"
 
 import "@workspace/ui/globals.css"
 import { ConvexClientProvider } from "@/components/convex-client-provider"
 import { ThemeProvider } from "@/components/theme-provider"
+import { cn } from "@workspace/ui/lib/utils";
 
-const fontSans = Geist({
-  subsets: ["latin"],
-  variable: "--font-sans",
-})
+const outfit = Outfit({subsets:['latin'],variable:'--font-sans'})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -25,7 +23,7 @@ export default function RootLayout({
       <html
         lang="en"
         suppressHydrationWarning
-        className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased`}
+        className={cn("antialiased", fontMono.variable, "font-sans", outfit.variable)}
       >
         <body>
           <ConvexClientProvider>
