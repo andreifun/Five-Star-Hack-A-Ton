@@ -8,77 +8,37 @@
  * @module
  */
 
-import type { FunctionReference } from "convex/server";
+import type * as ai_chat from "../ai/chat.js";
+import type * as ai_generateTips from "../ai/generateTips.js";
+import type * as businessMetrics from "../businessMetrics.js";
+import type * as businesses from "../businesses.js";
+import type * as chatMessages from "../chatMessages.js";
+import type * as chatThreads from "../chatThreads.js";
+import type * as helpers from "../helpers.js";
+import type * as products from "../products.js";
+import type * as reviews from "../reviews.js";
+import type * as tips from "../tips.js";
+import type * as users from "../users.js";
 
-type Func = FunctionReference<any, any, any, any>;
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
 
-interface ApiModules {
-  users: {
-    upsertCurrentUser: Func;
-    getCurrentUser: Func;
-  };
-  businesses: {
-    create: Func;
-    update: Func;
-    remove: Func;
-    listByCurrentUser: Func;
-    getById: Func;
-  };
-  reviews: {
-    create: Func;
-    bulkImport: Func;
-    update: Func;
-    listByBusiness: Func;
-    searchByText: Func;
-    remove: Func;
-  };
-  products: {
-    create: Func;
-    update: Func;
-    remove: Func;
-    listByBusiness: Func;
-    reorder: Func;
-  };
-  tips: {
-    updateStatus: Func;
-    addNotes: Func;
-    listByBusiness: Func;
-    getById: Func;
-  };
-  businessMetrics: {
-    getByBusiness: Func;
-  };
-  chatThreads: {
-    create: Func;
-    updateTitle: Func;
-    archive: Func;
-    listByBusiness: Func;
-    getById: Func;
-  };
-  chatMessages: {
-    listByThread: Func;
-  };
-  ai: {
-    chat: { sendMessage: Func };
-    generateTips: { generateTipsForBusiness: Func };
-  };
-}
-
-interface InternalModules {
-  tips: {
-    create: Func;
-  };
-  businessMetrics: {
-    recompute: Func;
-  };
-  chatMessages: {
-    addMessage: Func;
-    getRecentForContext: Func;
-  };
-  reviews: {
-    bulkImport: Func;
-  };
-}
+declare const fullApi: ApiFromModules<{
+  "ai/chat": typeof ai_chat;
+  "ai/generateTips": typeof ai_generateTips;
+  businessMetrics: typeof businessMetrics;
+  businesses: typeof businesses;
+  chatMessages: typeof chatMessages;
+  chatThreads: typeof chatThreads;
+  helpers: typeof helpers;
+  products: typeof products;
+  reviews: typeof reviews;
+  tips: typeof tips;
+  users: typeof users;
+}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.
@@ -88,7 +48,10 @@ interface InternalModules {
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: ApiModules;
+export declare const api: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "public">
+>;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -98,6 +61,9 @@ export declare const api: ApiModules;
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: InternalModules;
+export declare const internal: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "internal">
+>;
 
 export declare const components: {};
