@@ -112,3 +112,47 @@ export const allCompleted = query({
     return tasks.every((t) => t.status !== "pending" && t.status !== "running");
   },
 });
+
+export const hasAnyFailed = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
+    const tasks = await ctx.db
+      .query("setupTasks")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    return tasks.some((t) => t.status === "failed");
+  },
+});
+
+export const resetFailed = internalMutation({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const tasks = await ctx.db
+      .query("setupTasks")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    const now = Date.now();
+    for (const task of tasks) {
+      if (task.status === "failed") {
+        await ctx.db.patch(task._id, { status: "pending", message: undefined, updatedAt: now });
+      }
+    }
+  },
+});
+
+export const resetAll = internalMutation({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const tasks = await ctx.db
+      .query("setupTasks")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    const now = Date.now();
+    for (const task of tasks) {
+      if (task.status !== "skipped") {
+        await ctx.db.patch(task._id, { status: "pending", message: undefined, updatedAt: now });
+      }
+    }
+  },
+});

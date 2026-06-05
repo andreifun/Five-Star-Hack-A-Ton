@@ -1,17 +1,13 @@
 "use client"
 
-import { useQuery, useConvexAuth } from "convex/react"
-import { api } from "@/convex/_generated/api"
-import { useRouter } from "next/navigation"
 import { useEffect } from "react"
-import { Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useQuery } from "convex/react"
+import { api } from "@/convex/_generated/api"
+import { AuthGate, FullScreenLoader } from "@/components/auth-gate"
 
-export default function Page() {
-  const { isAuthenticated } = useConvexAuth()
-  const businesses = useQuery(
-    api.businesses.listAllByCurrentUser,
-    isAuthenticated ? {} : "skip",
-  )
+function Home() {
+  const businesses = useQuery(api.businesses.listAllByCurrentUser)
   const router = useRouter()
 
   useEffect(() => {
@@ -23,9 +19,13 @@ export default function Page() {
     }
   }, [businesses, router])
 
+  return <FullScreenLoader />
+}
+
+export default function Page() {
   return (
-    <div className="flex h-svh items-center justify-center">
-      <Loader2 className="size-6 animate-spin text-muted-foreground" />
-    </div>
+    <AuthGate>
+      <Home />
+    </AuthGate>
   )
 }

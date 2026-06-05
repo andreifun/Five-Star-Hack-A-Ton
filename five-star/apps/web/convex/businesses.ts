@@ -133,6 +133,24 @@ export const remove = mutation({
   },
 });
 
+export const retrySetup = mutation({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
+    await ctx.runMutation(internal.setupTasks.resetFailed, { businessId: args.businessId });
+    await ctx.scheduler.runAfter(0, internal.ai.setupBusiness.run, { businessId: args.businessId });
+  },
+});
+
+export const refreshData = mutation({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
+    await ctx.runMutation(internal.setupTasks.resetAll, { businessId: args.businessId });
+    await ctx.scheduler.runAfter(0, internal.ai.setupBusiness.run, { businessId: args.businessId });
+  },
+});
+
 export const listByCurrentUser = query({
   args: {
     paginationOpts: paginationOptsValidator,

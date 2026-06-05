@@ -1,6 +1,6 @@
 "use client"
 
-import { useQuery } from "convex/react"
+import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { useCurrentBusiness } from "@/components/business-context"
 import { useRouter } from "next/navigation"
@@ -13,8 +13,10 @@ import {
   CheckCircle2,
   XCircle,
   SkipForward,
+  RefreshCw,
 } from "lucide-react"
 import { Doc } from "@/convex/_generated/dataModel"
+import { useState } from "react"
 
 type TaskStatus = Doc<"setupTasks">["status"]
 
@@ -43,13 +45,31 @@ export default function SetupPage() {
   const router = useRouter()
   const tasks = useQuery(api.setupTasks.listByBusiness, { businessId })
   const done = useQuery(api.setupTasks.allCompleted, { businessId })
+  const hasFailed = useQuery(api.setupTasks.hasAnyFailed, { businessId })
+  const retrySetup = useMutation(api.businesses.retrySetup)
+  const [retrying, setRetrying] = useState(false)
+
+  async function handleRetry() {
+    setRetrying(true)
+    try {
+      await retrySetup({ businessId })
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  const allSettled = done === true
+  const showRetry = allSettled && hasFailed
+  const showDashboard = allSettled && !hasFailed
 
   return (
     <div className="flex flex-1 items-center justify-center p-6">
       <div className="w-full max-w-lg">
         <Card>
           <CardHeader>
-            <CardTitle>{done ? "Ready! 🎉" : "Setting up your business…"}</CardTitle>
+            <CardTitle>
+              {showDashboard ? "Ready! 🎉" : showRetry ? "Setup completed with errors" : "Setting up your business…"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {tasks === undefined && (
@@ -73,8 +93,23 @@ export default function SetupPage() {
                 </div>
               </div>
             ))}
-            {done && (
-              <div className="pt-4">
+            {(showDashboard || showRetry) && (
+              <div className="flex flex-col gap-2 pt-4">
+                {showRetry && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleRetry}
+                    disabled={retrying}
+                  >
+                    {retrying ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 size-4" />
+                    )}
+                    Retry failed tasks
+                  </Button>
+                )}
                 <Button
                   className="w-full"
                   onClick={() => router.push(`/businesses/${businessId}`)}

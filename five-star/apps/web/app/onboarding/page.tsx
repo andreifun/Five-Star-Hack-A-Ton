@@ -2,8 +2,11 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useMutation } from "convex/react"
+import { useMutation, useQuery } from "convex/react"
+import { UserButton } from "@clerk/nextjs"
 import { api } from "@/convex/_generated/api"
+import { AuthGate } from "@/components/auth-gate"
+import { Logo } from "@/components/logo"
 import { Button } from "@workspace/ui/components/button"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { Input } from "@workspace/ui/components/input"
@@ -44,9 +47,11 @@ interface FormState {
   openingHours: string
 }
 
-export default function OnboardingPage() {
+function OnboardingForm() {
   const router = useRouter()
   const createBusiness = useMutation(api.businesses.create)
+  const businesses = useQuery(api.businesses.listAllByCurrentUser)
+  const hasBusinesses = (businesses?.length ?? 0) > 0
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -124,12 +129,29 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center p-4">
-      <div className="w-full max-w-lg">
-        <div className="mb-6 text-center">
-          <p className="text-sm text-muted-foreground">Step {step} of 4</p>
-          <Separator className="mt-3" />
-        </div>
+    <div className="flex min-h-svh flex-col">
+      <header className="flex shrink-0 items-center justify-between border-b px-4 py-3">
+        {hasBusinesses ? (
+          <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
+            ← Back
+          </Button>
+        ) : (
+          <Logo className="h-7" />
+        )}
+        <UserButton />
+      </header>
+
+      <div className="flex flex-1 items-center justify-center p-4">
+        <div className="w-full max-w-lg">
+          <div className="mb-6 text-center">
+            <h1 className="font-heading text-lg font-semibold">
+              {hasBusinesses
+                ? "Add a business"
+                : "Welcome — let's add your first business"}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">Step {step} of 4</p>
+            <Separator className="mt-3" />
+          </div>
 
         <Card>
           {step === 1 && (
@@ -374,8 +396,17 @@ export default function OnboardingPage() {
               </Button>
             )}
           </CardFooter>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
+  )
+}
+
+export default function OnboardingPage() {
+  return (
+    <AuthGate>
+      <OnboardingForm />
+    </AuthGate>
   )
 }

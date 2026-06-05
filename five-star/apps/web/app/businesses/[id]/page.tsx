@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePaginatedQuery } from "convex/react"
+import { usePaginatedQuery, useMutation, useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { useCurrentBusiness } from "@/components/business-context"
 import { StarRating } from "@/components/star-rating"
@@ -10,8 +10,11 @@ import { TipCard } from "@/components/tip-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/card"
 import { Badge } from "@workspace/ui/components/badge"
 import { Progress } from "@workspace/ui/components/progress"
-import { Loader2, ArrowRight, Star, MessageSquareText, Lightbulb, Smile } from "lucide-react"
+import { Button } from "@workspace/ui/components/button"
+import { Loader2, ArrowRight, Star, MessageSquareText, Lightbulb, Smile, RefreshCw } from "lucide-react"
 import { BUSINESS_TYPE_LABELS, formatCount } from "@/lib/format"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 function MetricCard({
   icon,
@@ -37,6 +40,20 @@ function MetricCard({
 
 export default function DashboardPage() {
   const { businessId, business } = useCurrentBusiness()
+  const router = useRouter()
+  const refreshData = useMutation(api.businesses.refreshData)
+  const setupDone = useQuery(api.setupTasks.allCompleted, { businessId })
+  const [refreshing, setRefreshing] = useState(false)
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    try {
+      await refreshData({ businessId })
+      router.push(`/businesses/${businessId}/setup`)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const recentReviews = usePaginatedQuery(
     api.reviews.listByBusiness,
@@ -92,9 +109,26 @@ export default function DashboardPage() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl space-y-6 p-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">{business.name}</h1>
-          <Badge variant="outline">{BUSINESS_TYPE_LABELS[business.type]}</Badge>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold">{business.name}</h1>
+            <Badge variant="outline">{BUSINESS_TYPE_LABELS[business.type]}</Badge>
+          </div>
+          {setupDone && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? (
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1.5 size-3.5" />
+              )}
+              Refresh data
+            </Button>
+          )}
         </div>
 
         {/* Metric cards */}

@@ -38,18 +38,26 @@ export const run = internalAction({
 
     const sl = business.socialLinks ?? {};
 
-    await ctx.runMutation(internal.setupTasks.createForBusiness, {
-      businessId: args.businessId,
-      hasWebsite: !!business.website,
-      hasGoogle: !!sl.google,
-      hasTripadvisor: !!sl.tripadvisor,
-      hasBooking: !!sl.booking,
-      hasYelp: !!sl.yelp,
-    });
-
-    const tasks = (await ctx.runQuery(internal.setupTasks.listByBusinessInternal, {
+    const existingTasks = (await ctx.runQuery(internal.setupTasks.listByBusinessInternal, {
       businessId: args.businessId,
     })) as Doc<"setupTasks">[];
+
+    if (existingTasks.length === 0) {
+      await ctx.runMutation(internal.setupTasks.createForBusiness, {
+        businessId: args.businessId,
+        hasWebsite: !!business.website,
+        hasGoogle: !!sl.google,
+        hasTripadvisor: !!sl.tripadvisor,
+        hasBooking: !!sl.booking,
+        hasYelp: !!sl.yelp,
+      });
+    }
+
+    const tasks = existingTasks.length > 0
+      ? existingTasks
+      : (await ctx.runQuery(internal.setupTasks.listByBusinessInternal, {
+          businessId: args.businessId,
+        })) as Doc<"setupTasks">[];
 
     for (const task of tasks) {
       if (task.status === "skipped") continue;
