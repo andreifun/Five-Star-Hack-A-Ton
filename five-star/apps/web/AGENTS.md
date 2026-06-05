@@ -11,3 +11,18 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+## AI Model Usage
+
+**Always use AI Gateway** (`@ai-sdk/gateway`) for all AI calls in this project — never import provider SDKs (e.g. `@ai-sdk/anthropic`, `@ai-sdk/openai`) directly in Convex actions.
+
+The gateway provider is instantiated locally in each Convex action file:
+
+```ts
+import { createGatewayProvider } from "@ai-sdk/gateway";
+const gateway = createGatewayProvider({ apiKey: process.env.AI_GATEWAY_API_KEY });
+```
+
+Model IDs follow the `provider/model-name` convention (e.g. `anthropic/claude-sonnet-4-5`, `openai/gpt-4o`, `google/gemini-2.0-flash`). The default model for all AI features is `anthropic/claude-sonnet-4-5`.
+
+All AI action functions accept an optional `model` argument so callers can swap the model at runtime without code changes. The `generatedByModel` / `model` fields on `tips` and `chatMessages` documents record which model was used for each generation.
