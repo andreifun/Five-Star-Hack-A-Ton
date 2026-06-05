@@ -5,7 +5,7 @@ import { action } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { Doc } from "../_generated/dataModel";
 import { createGatewayProvider } from "@ai-sdk/gateway";
-import { generateText, CoreMessage } from "ai";
+import { generateText } from "ai";
 
 const gateway = createGatewayProvider({
   apiKey: process.env.AI_GATEWAY_API_KEY,
@@ -86,7 +86,7 @@ Your role:
 - Be encouraging but honest about areas needing improvement
 - Keep responses concise and practical`;
 
-    const messages: CoreMessage[] = history
+    const messages: { role: "user" | "assistant"; content: string }[] = history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({
         role: m.role as "user" | "assistant",
