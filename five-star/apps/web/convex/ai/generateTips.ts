@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal, api } from "../_generated/api";
-import { Doc } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { createGatewayProvider } from "@ai-sdk/gateway";
 import { generateText } from "ai";
 
@@ -34,27 +34,30 @@ export const generateTipsForBusiness = action({
     businessId: v.id("businesses"),
     model: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args: { businessId: Id<"businesses">; model?: string },
+  ): Promise<void> => {
     const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
 
-    const businessWithMetrics: {
-      metrics: Doc<"businessMetrics"> | null;
-    } & Doc<"businesses"> = await ctx.runQuery(api.businesses.getById, {
+    const businessWithMetrics = (await ctx.runQuery(api.businesses.getById, {
       businessId: args.businessId,
-    });
+    })) as ({ metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">) | null;
+
+    if (!businessWithMetrics) throw new Error("Business not found or access denied");
 
     const recentReviewsPage = await ctx.runQuery(api.reviews.listByBusiness, {
       businessId: args.businessId,
       paginationOpts: { numItems: 50, cursor: null },
     });
-    const reviews = recentReviewsPage.page;
+    const reviews = (recentReviewsPage as { page: Doc<"reviews">[] }).page;
 
     const existingTipsPage = await ctx.runQuery(api.tips.listByBusiness, {
       businessId: args.businessId,
       paginationOpts: { numItems: 20, cursor: null },
       status: "pending",
     });
-    const pendingTips = existingTipsPage.page;
+    const pendingTips = (existingTipsPage as { page: Doc<"tips">[] }).page;
 
     const businessContext = `
 Business: ${businessWithMetrics.name}
@@ -75,7 +78,7 @@ Metrics:
 
     const reviewsText = reviews
       .map(
-        (r, i) =>
+        (r: Doc<"reviews">, i: number) =>
           `[${i}] Rating: ${r.rating}/5 | Source: ${r.source} | Sentiment: ${r.sentiment ?? "unknown"}
 ${r.title ? `Title: ${r.title}` : ""}
 ${r.text ? `Review: ${r.text}` : "(no text)"}
@@ -83,7 +86,7 @@ ${r.topics?.length ? `Topics: ${r.topics.join(", ")}` : ""}`,
       )
       .join("\n\n");
 
-    const pendingTitles = pendingTips.map((t) => t.title).join(", ");
+    const pendingTitles = pendingTips.map((t: Doc<"tips">) => t.title).join(", ");
 
     const prompt = `You are an expert hospitality consultant helping a ${businessWithMetrics.type} owner improve their business.
 
@@ -116,7 +119,7 @@ Only output valid JSON, no markdown, no explanation.`;
     const { text: rawText } = await generateText({
       model: gateway(modelId),
       prompt,
-      maxTokens: 2048,
+      maxOutputTokens: 2048,
     });
 
     let tips: GeneratedTip[] = [];
@@ -129,8 +132,8 @@ Only output valid JSON, no markdown, no explanation.`;
 
     for (const tip of tips) {
       const sourceReviewIds = (tip.sourceReviewIndices ?? [])
-        .filter((i) => i >= 0 && i < reviews.length)
-        .map((i) => reviews[i]._id);
+        .filter((i: number) => i >= 0 && i < reviews.length)
+        .map((i: number) => reviews[i]!._id);
 
       await ctx.runMutation(internal.tips.create, {
         businessId: args.businessId,

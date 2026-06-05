@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal, api } from "../_generated/api";
-import { Doc } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { createGatewayProvider } from "@ai-sdk/gateway";
 import { generateText } from "ai";
 
@@ -18,8 +18,32 @@ export const sendMessage = action({
     content: v.string(),
     model: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args: {
+      threadId: Id<"chatThreads">;
+      businessId: Id<"businesses">;
+      content: string;
+      model?: string;
+    },
+  ): Promise<{ content: string; messageId: Id<"chatMessages">; isError: boolean }> => {
     const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
+
+    // Verify ownership before writing anything
+    const businessWithMetrics = (await ctx.runQuery(api.businesses.getById, {
+      businessId: args.businessId,
+    })) as ({ metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">) | null;
+
+    if (!businessWithMetrics) throw new Error("Business not found or access denied");
+
+    // Verify the thread belongs to this business
+    const thread = (await ctx.runQuery(api.chatThreads.getById, {
+      threadId: args.threadId,
+    })) as Doc<"chatThreads"> | null;
+
+    if (!thread || thread.businessId !== args.businessId) {
+      throw new Error("Thread not found or does not belong to this business");
+    }
 
     await ctx.runMutation(internal.chatMessages.addMessage, {
       threadId: args.threadId,
@@ -29,31 +53,25 @@ export const sendMessage = action({
       isError: false,
     });
 
-    const [history, businessWithMetrics, recentReviewsPage, pendingTipsPage] =
-      await Promise.all([
-        ctx.runQuery(internal.chatMessages.getRecentForContext, {
-          threadId: args.threadId,
-          limit: 20,
-        }) as Promise<Doc<"chatMessages">[]>,
-        ctx.runQuery(api.businesses.getById, {
-          businessId: args.businessId,
-        }) as Promise<
-          { metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">
-        >,
-        ctx.runQuery(api.reviews.listByBusiness, {
-          businessId: args.businessId,
-          paginationOpts: { numItems: 10, cursor: null },
-        }),
-        ctx.runQuery(api.tips.listByBusiness, {
-          businessId: args.businessId,
-          paginationOpts: { numItems: 10, cursor: null },
-          status: "pending",
-        }),
-      ]);
+    const [history, recentReviewsPage, pendingTipsPage] = await Promise.all([
+      ctx.runQuery(internal.chatMessages.getRecentForContext, {
+        threadId: args.threadId,
+        limit: 20,
+      }) as Promise<Doc<"chatMessages">[]>,
+      ctx.runQuery(api.reviews.listByBusiness, {
+        businessId: args.businessId,
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+      ctx.runQuery(api.tips.listByBusiness, {
+        businessId: args.businessId,
+        paginationOpts: { numItems: 10, cursor: null },
+        status: "pending",
+      }),
+    ]);
 
     const metrics = businessWithMetrics.metrics;
-    const recentReviews = recentReviewsPage.page;
-    const pendingTips = pendingTipsPage.page;
+    const recentReviews = (recentReviewsPage as { page: Doc<"reviews">[] }).page;
+    const pendingTips = (pendingTipsPage as { page: Doc<"tips">[] }).page;
 
     const systemPrompt = `You are an expert hospitality consultant and business coach for ${businessWithMetrics.name}, a ${businessWithMetrics.type} business. You help the owner understand their customer feedback and improve their service quality.
 
@@ -74,10 +92,10 @@ Current Performance Metrics:
 - Pending improvement tips: ${metrics?.pendingTipsCount ?? 0}
 
 Recent Customer Reviews (last 10):
-${recentReviews.length > 0 ? recentReviews.map((r) => `- [${r.rating}/5, ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "No reviews yet."}
+${recentReviews.length > 0 ? recentReviews.map((r: Doc<"reviews">) => `- [${r.rating}/5, ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "No reviews yet."}
 
 Active Improvement Tips:
-${pendingTips.length > 0 ? pendingTips.map((t) => `- [${t.priority}] ${t.title}: ${t.content}`).join("\n") : "No pending tips."}
+${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `- [${t.priority}] ${t.title}: ${t.content}`).join("\n") : "No pending tips."}
 
 Your role:
 - Answer questions about the business's performance, reviews, and improvement areas
@@ -87,8 +105,8 @@ Your role:
 - Keep responses concise and practical`;
 
     const messages: { role: "user" | "assistant"; content: string }[] = history
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
+      .filter((m: Doc<"chatMessages">) => m.role === "user" || m.role === "assistant")
+      .map((m: Doc<"chatMessages">) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       }));
@@ -104,12 +122,12 @@ Your role:
         model: gateway(modelId),
         system: systemPrompt,
         messages,
-        maxTokens: 1024,
+        maxOutputTokens: 1024,
       });
 
       assistantContent = result.text;
-      inputTokens = result.usage.promptTokens;
-      outputTokens = result.usage.completionTokens;
+      inputTokens = result.usage.inputTokens ?? 0;
+      outputTokens = result.usage.outputTokens ?? 0;
     } catch (err) {
       isError = true;
       errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -117,17 +135,20 @@ Your role:
         "I encountered an error processing your request. Please try again.";
     }
 
-    const messageId = await ctx.runMutation(internal.chatMessages.addMessage, {
-      threadId: args.threadId,
-      businessId: args.businessId,
-      role: "assistant",
-      content: assistantContent,
-      model: modelId,
-      inputTokens,
-      outputTokens,
-      isError,
-      errorMessage,
-    });
+    const messageId: Id<"chatMessages"> = await ctx.runMutation(
+      internal.chatMessages.addMessage,
+      {
+        threadId: args.threadId,
+        businessId: args.businessId,
+        role: "assistant",
+        content: assistantContent,
+        model: modelId,
+        inputTokens,
+        outputTokens,
+        isError,
+        errorMessage,
+      },
+    );
 
     return { content: assistantContent, messageId, isError };
   },

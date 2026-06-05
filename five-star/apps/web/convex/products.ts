@@ -102,7 +102,12 @@ export const reorder = mutation({
   handler: async (ctx, args) => {
     await requireBusinessOwner(ctx, args.businessId);
     for (let i = 0; i < args.orderedIds.length; i++) {
-      await ctx.db.patch(args.orderedIds[i], { sortOrder: i });
+      const productId = args.orderedIds[i]!;
+      const product = await ctx.db.get(productId);
+      if (!product || product.businessId !== args.businessId) {
+        throw new Error("Product does not belong to this business");
+      }
+      await ctx.db.patch(productId, { sortOrder: i });
     }
   },
 });

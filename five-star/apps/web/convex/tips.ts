@@ -91,6 +91,7 @@ export const listByBusiness = query({
     priority: v.optional(priorityValidator),
   },
   handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
     if (args.status && args.priority) {
       return await ctx.db
         .query("tips")
@@ -132,6 +133,9 @@ export const listByBusiness = query({
 export const getById = query({
   args: { tipId: v.id("tips") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.tipId);
+    const tip = await ctx.db.get(args.tipId);
+    if (!tip) return null;
+    await requireBusinessOwner(ctx, tip.businessId);
+    return tip;
   },
 });

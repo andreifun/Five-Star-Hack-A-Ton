@@ -1,6 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireBusinessOwner } from "./helpers";
 import { Doc } from "./_generated/dataModel";
 
@@ -61,7 +61,7 @@ export const listByThread = query({
   },
 });
 
-export const getRecentForContext = query({
+export const getRecentForContext = internalQuery({
   args: {
     threadId: v.id("chatThreads"),
     limit: v.optional(v.number()),
