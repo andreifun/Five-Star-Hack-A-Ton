@@ -143,7 +143,7 @@ ${html.slice(0, 15000)}`,
       if (!dataIdMatch) {
         throw new Error(`Could not extract Google Maps place ID from URL: ${sl.google}`);
       }
-      const dataId = dataIdMatch[1];
+      const dataId: string = dataIdMatch[1];
 
       const allReviews: Array<{
         rating: number;
