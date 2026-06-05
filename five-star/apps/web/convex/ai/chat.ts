@@ -4,18 +4,23 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { Doc } from "../_generated/dataModel";
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayProvider } from "@ai-sdk/gateway";
 import { generateText, CoreMessage } from "ai";
 
-const anthropic = createAnthropic();
+const gateway = createGatewayProvider({
+  apiKey: process.env.AI_GATEWAY_API_KEY,
+});
 
 export const sendMessage = action({
   args: {
     threadId: v.id("chatThreads"),
     businessId: v.id("businesses"),
     content: v.string(),
+    model: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
+
     await ctx.runMutation(internal.chatMessages.addMessage, {
       threadId: args.threadId,
       businessId: args.businessId,
@@ -96,7 +101,7 @@ Your role:
 
     try {
       const result = await generateText({
-        model: anthropic("claude-sonnet-4-5"),
+        model: gateway(modelId),
         system: systemPrompt,
         messages,
         maxTokens: 1024,
@@ -117,7 +122,7 @@ Your role:
       businessId: args.businessId,
       role: "assistant",
       content: assistantContent,
-      model: "claude-sonnet-4-5",
+      model: modelId,
       inputTokens,
       outputTokens,
       isError,

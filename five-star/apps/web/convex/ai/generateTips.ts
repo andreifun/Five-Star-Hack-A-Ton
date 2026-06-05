@@ -4,10 +4,12 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { Doc } from "../_generated/dataModel";
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGatewayProvider } from "@ai-sdk/gateway";
 import { generateText } from "ai";
 
-const anthropic = createAnthropic();
+const gateway = createGatewayProvider({
+  apiKey: process.env.AI_GATEWAY_API_KEY,
+});
 
 interface GeneratedTip {
   category:
@@ -28,8 +30,13 @@ interface GeneratedTip {
 }
 
 export const generateTipsForBusiness = action({
-  args: { businessId: v.id("businesses") },
+  args: {
+    businessId: v.id("businesses"),
+    model: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
+
     const businessWithMetrics: {
       metrics: Doc<"businessMetrics"> | null;
     } & Doc<"businesses"> = await ctx.runQuery(api.businesses.getById, {
@@ -107,7 +114,7 @@ Respond with a JSON array of tips with this exact structure:
 Only output valid JSON, no markdown, no explanation.`;
 
     const { text: rawText } = await generateText({
-      model: anthropic("claude-sonnet-4-5"),
+      model: gateway(modelId),
       prompt,
       maxTokens: 2048,
     });
@@ -131,7 +138,7 @@ Only output valid JSON, no markdown, no explanation.`;
         priority: tip.priority,
         title: tip.title,
         content: tip.content,
-        generatedByModel: "claude-sonnet-4-5",
+        generatedByModel: modelId,
         sourceReviewIds: sourceReviewIds.length > 0 ? sourceReviewIds : undefined,
       });
     }
