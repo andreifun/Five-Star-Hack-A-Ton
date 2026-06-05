@@ -65,7 +65,7 @@ export const generateTipsForBusiness = internalAction({
     ctx,
     args: { businessId: Id<"businesses">; model?: string },
   ): Promise<void> => {
-    const modelId = args.model ?? "minimax/m3";
+    const modelId = args.model ?? "minimax/minimax-m3";
 
     const businessWithMetrics = (await ctx.runQuery(
       internal.businesses.getByIdInternal,
