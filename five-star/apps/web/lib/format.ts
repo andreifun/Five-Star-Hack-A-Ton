@@ -70,6 +70,24 @@ export function formatRelativeDate(timestamp: number): string {
   })
 }
 
+export function formatAbsoluteDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+export type RecencyLevel = "new" | "recent" | "older"
+
+export function getRecencyLevel(timestamp: number): RecencyLevel {
+  const diff = Date.now() - timestamp
+  const day = 24 * 60 * 60 * 1000
+  if (diff < 7 * day) return "new"
+  if (diff < 30 * day) return "recent"
+  return "older"
+}
+
 export function formatCount(n: number): string {
   return new Intl.NumberFormat().format(n)
 }

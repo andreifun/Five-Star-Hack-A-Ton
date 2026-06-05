@@ -4,10 +4,22 @@ import { StarRating } from "@/components/star-rating"
 import {
   SOURCE_LABELS,
   SENTIMENT_BADGE,
+  formatAbsoluteDate,
   formatRelativeDate,
+  getRecencyLevel,
 } from "@/lib/format"
 
+const RECENCY_BADGE: Record<
+  "new" | "recent",
+  { label: string; className: string }
+> = {
+  new: { label: "New", className: "bg-green-100 text-green-700 border-green-200" },
+  recent: { label: "Recent", className: "bg-blue-100 text-blue-700 border-blue-200" },
+}
+
 export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
+  const recency = getRecencyLevel(review.reviewDate)
+
   return (
     <div className="rounded-xl border p-4">
       <div className="flex items-start justify-between gap-3">
@@ -15,11 +27,21 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
           <p className="truncate text-sm font-medium">
             {review.reviewerName ?? "Anonymous"}
           </p>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <StarRating value={review.rating} />
             <span className="text-xs text-muted-foreground">
-              {formatRelativeDate(review.reviewDate)}
+              {formatAbsoluteDate(review.reviewDate)}
             </span>
+            <span className="text-xs text-muted-foreground">
+              · {formatRelativeDate(review.reviewDate)}
+            </span>
+            {recency !== "older" && (
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${RECENCY_BADGE[recency].className}`}
+              >
+                {RECENCY_BADGE[recency].label}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -35,8 +57,10 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
       {review.title && (
         <p className="mt-2 text-sm font-medium">{review.title}</p>
       )}
-      {review.text && (
+      {review.text ? (
         <p className="mt-1 text-sm text-muted-foreground">{review.text}</p>
+      ) : (
+        <p className="mt-1 text-xs italic text-muted-foreground/60">No review text</p>
       )}
 
       {review.ownerReply && (
