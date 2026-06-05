@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs"
 import { Geist, Geist_Mono, Outfit } from "next/font/google"
 
 import "@workspace/ui/globals.css"
+import "streamdown/styles.css"
 import { ConvexClientProvider } from "@/components/convex-client-provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@workspace/ui/lib/utils";
