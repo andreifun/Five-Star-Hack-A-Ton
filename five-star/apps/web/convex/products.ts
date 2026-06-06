@@ -109,6 +109,17 @@ export const listByBusiness = query({
   },
 });
 
+export const countByBusiness = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("products")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    return rows.length;
+  },
+});
+
 export const reorder = mutation({
   args: {
     businessId: v.id("businesses"),

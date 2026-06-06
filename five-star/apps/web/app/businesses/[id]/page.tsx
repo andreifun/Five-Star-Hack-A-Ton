@@ -15,9 +15,9 @@ import { useCurrentBusiness } from "@/components/business-context"
 import { StarRating } from "@/components/star-rating"
 import { ReviewCard } from "@/components/review-card"
 import { TipCard } from "@/components/tip-card"
+import { ProductCard } from "@/components/product-card"
 import { FeatureCard } from "@/components/feature-card"
 import { PromptBar } from "@/components/prompt-bar"
-import { Card, CardContent } from "@workspace/ui/components/card"
 import { Badge } from "@workspace/ui/components/badge"
 import { Progress } from "@workspace/ui/components/progress"
 import { Button } from "@workspace/ui/components/button"
@@ -39,6 +39,7 @@ import {
   MessageSquareText,
   Lightbulb,
   Smile,
+  ShoppingBag,
   History,
   RefreshCw,
   Plus,
@@ -52,55 +53,21 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 import { useRouter } from "next/navigation"
 
-type ModalId = "rating" | "reviews" | "tips" | "sentiment" | null
+type ModalId = "rating" | "reviews" | "tips" | "sentiment" | "products" | null
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 10 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
-}
 const containerVariants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.07 } },
+}
+const cardVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
 }
 const messageVariants = {
   hidden: { opacity: 0, y: 8 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.2 } },
 }
 
-function InfoCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  onClick,
-}: {
-  icon: React.ElementType
-  label: string
-  value: React.ReactNode
-  sub?: React.ReactNode
-  onClick: () => void
-}) {
-  return (
-    <motion.div variants={cardVariants}>
-      <Card
-        size="sm"
-        className="cursor-pointer transition-shadow hover:shadow-md active:scale-[0.98]"
-        onClick={onClick}
-      >
-        <CardContent className="space-y-1.5">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Icon className="size-3.5" />
-            {label}
-          </div>
-          <div className="text-2xl font-semibold tabular-nums">{value}</div>
-          {sub && (
-            <p className="text-xs">{sub}</p>
-          )}
-        </CardContent>
-      </Card>
-    </motion.div>
-  )
-}
 
 export default function DashboardPage() {
   const { businessId, business } = useCurrentBusiness()
@@ -168,6 +135,12 @@ export default function DashboardPage() {
     { businessId, status: "pending" },
     { initialNumItems: 10 },
   )
+  const products = usePaginatedQuery(
+    api.products.listByBusiness,
+    { businessId },
+    { initialNumItems: 20 },
+  )
+  const productCount = useQuery(api.products.countByBusiness, { businessId })
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -258,8 +231,8 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* ── Info cards ── */}
-      <div className="shrink-0 border-b px-4 py-3">
-        <div className="mx-auto max-w-4xl">
+      <div className="shrink-0 px-4 py-4">
+        <div className="mx-auto max-w-2xl">
           <div className="mb-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{business.name}</span>
@@ -284,69 +257,83 @@ export default function DashboardPage() {
               </Button>
             )}
           </div>
-          <div className="mb-2">
-            <FeatureCard icon={<Lightbulb className="size-4" />} title="AI-powered insights">
-              Actionable tips from your reviews
-            </FeatureCard>
-          </div>
           <motion.div
-            className="grid grid-cols-2 gap-2 lg:grid-cols-4"
+            className="grid grid-cols-2 gap-2"
             variants={containerVariants}
             initial="hidden"
             animate="visible"
           >
-            <InfoCard
-              icon={Star}
-              label="Average rating"
-              value={
-                metrics && reviewCount > 0 ? (
-                  <span className="flex items-center gap-1.5">
-                    {metrics.avgRating.toFixed(1)}
-                    <StarRating value={metrics.avgRating} />
+            <motion.div variants={cardVariants}>
+              <FeatureCard
+                icon={<Star className="size-4" />}
+                title={
+                  metrics && reviewCount > 0 ? (
+                    <span className="flex items-center gap-1.5 text-2xl font-semibold tabular-nums">
+                      {metrics.avgRating.toFixed(1)}
+                      <StarRating value={metrics.avgRating} />
+                    </span>
+                  ) : (
+                    <span className="text-2xl font-semibold">—</span>
+                  )
+                }
+                onClick={() => setActiveModal("rating")}
+              >
+                {reviewCount > 0 ? `from ${formatCount(reviewCount)} reviews` : "Average rating"}
+              </FeatureCard>
+            </motion.div>
+            <motion.div variants={cardVariants}>
+              <FeatureCard
+                icon={<MessageSquareText className="size-4" />}
+                title={<span className="text-2xl font-semibold tabular-nums">{formatCount(reviewCount)}</span>}
+                onClick={() => setActiveModal("reviews")}
+              >
+                Total reviews
+              </FeatureCard>
+            </motion.div>
+            <motion.div variants={cardVariants}>
+              <FeatureCard
+                icon={<Lightbulb className="size-4" />}
+                title={<span className="text-2xl font-semibold tabular-nums">{formatCount(metrics?.pendingTipsCount ?? 0)}</span>}
+                onClick={() => setActiveModal("tips")}
+              >
+                Open tips
+              </FeatureCard>
+            </motion.div>
+            <motion.div variants={cardVariants}>
+              <FeatureCard
+                icon={<Smile className="size-4" />}
+                title={
+                  <span className="text-2xl font-semibold tabular-nums">
+                    {metrics?.positivityScore !== undefined ? metrics.positivityScore.toFixed(1) : "—"}
                   </span>
-                ) : (
-                  "—"
-                )
-              }
-              sub={reviewCount > 0 ? `from ${formatCount(reviewCount)} reviews` : undefined}
-              onClick={() => setActiveModal("rating")}
-            />
-            <InfoCard
-              icon={MessageSquareText}
-              label="Total reviews"
-              value={formatCount(reviewCount)}
-              sub="tap to browse"
-              onClick={() => setActiveModal("reviews")}
-            />
-            <InfoCard
-              icon={Lightbulb}
-              label="Open tips"
-              value={formatCount(metrics?.pendingTipsCount ?? 0)}
-              sub="tap to view"
-              onClick={() => setActiveModal("tips")}
-            />
-            <InfoCard
-              icon={Smile}
-              label="Positivity"
-              value={
-                metrics?.positivityScore !== undefined
-                  ? metrics.positivityScore.toFixed(1)
-                  : "—"
-              }
-              sub={
-                metrics?.positivityScore !== undefined
+                }
+                onClick={() => setActiveModal("sentiment")}
+              >
+                {metrics?.positivityScore !== undefined
                   ? (() => {
                       const s = metrics.positivityScore!
                       if (s <= -10) return <span className="text-red-900">Very bad</span>
                       if (s < -2) return <span className="text-red-500">Bad</span>
-                      if (s <= 2) return <span className="text-white">Neutral</span>
+                      if (s <= 2) return <span className="text-muted-foreground">Neutral</span>
                       if (s >= 10) return <span className="text-green-700">Really good</span>
                       return <span className="text-blue-400">Good</span>
                     })()
-                  : undefined
-              }
-              onClick={() => setActiveModal("sentiment")}
-            />
+                  : "Positivity score"}
+              </FeatureCard>
+            </motion.div>
+            <motion.div variants={cardVariants}>
+              <FeatureCard
+                icon={<ShoppingBag className="size-4" />}
+                title={
+                  <span className="text-2xl font-semibold tabular-nums">
+                    {productCount ?? "—"}
+                  </span>
+                }
+                onClick={() => setActiveModal("products")}
+              >
+                Products
+              </FeatureCard>
+            </motion.div>
           </motion.div>
         </div>
       </div>
@@ -590,6 +577,34 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Products modal ── */}
+      <Dialog open={activeModal === "products"} onOpenChange={() => setActiveModal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Products</DialogTitle>
+          </DialogHeader>
+          {products.results.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No products found.</p>
+          ) : (
+            <div className="space-y-3">
+              {products.results.map((product) => (
+                <ProductCard key={product._id} product={product} />
+              ))}
+              {products.status === "CanLoadMore" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => products.loadMore(20)}
+                >
+                  Load more
+                </Button>
+              )}
             </div>
           )}
         </DialogContent>

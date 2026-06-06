@@ -8,7 +8,6 @@ import {
   BusinessProvider,
   useCurrentBusiness,
 } from "@/components/business-context"
-import { BusinessNav } from "@/components/business-nav"
 import { AuthGate, FullScreenLoader, StatusScreen } from "@/components/auth-gate"
 import { Header } from "@/components/header"
 
@@ -37,8 +36,7 @@ function BusinessShell({ children }: { children: React.ReactNode }) {
           <UserButton />
         </div>
       </div>
-      {!isSetup && <BusinessNav />}
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+<div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </div>
   )
 }

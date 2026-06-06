@@ -5,26 +5,29 @@ import { cn } from "@workspace/ui/lib/utils"
 
 interface FeatureCardProps {
   icon?: React.ReactNode
-  title: string
+  title: React.ReactNode
   children?: React.ReactNode
   className?: string
+  onClick?: () => void
 }
 
-export function FeatureCard({ icon, title, children, className }: FeatureCardProps) {
+export function FeatureCard({ icon, title, children, className, onClick }: FeatureCardProps) {
   return (
     <motion.div
       className={cn(
-        "relative h-20 overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10",
+        "relative h-20 overflow-hidden rounded-2xl bg-card shadow-md ring-1 ring-foreground/10",
+        onClick && "cursor-pointer",
         className,
       )}
       initial="idle"
       whileHover="hovered"
+      onClick={onClick}
     >
       {/* Left content */}
       <div className="flex h-full items-center px-5">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {icon && <div className="mb-0.5 text-muted-foreground">{icon}</div>}
-          <p className="truncate text-sm font-medium leading-tight">{title}</p>
+          <div className="truncate text-sm font-medium leading-tight">{title}</div>
           {children && (
             <div className="truncate text-xs text-muted-foreground">{children}</div>
           )}
