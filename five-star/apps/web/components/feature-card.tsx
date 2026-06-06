@@ -26,8 +26,10 @@ export function FeatureCard({ icon, title, children, className, onClick }: Featu
       {/* Left content */}
       <div className="flex h-full items-center px-5">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {icon && <div className="mb-0.5 text-muted-foreground">{icon}</div>}
-          <div className="truncate text-sm font-medium leading-tight">{title}</div>
+          <div className="flex items-center gap-1.5">
+            {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
+            <div className="truncate text-sm font-medium leading-tight">{title}</div>
+          </div>
           {children && (
             <div className="truncate text-xs text-muted-foreground">{children}</div>
           )}

@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction, ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { getAiGateway, getSerpApiKey } from "./ai/env";
+import { getAiGateway, getSerpApiKey } from "./env";
 import { generateText } from "ai";
 import { createHash } from "crypto";
 
@@ -62,7 +62,9 @@ export const run = internalAction({
         hasLocation: !!business.location,
         hasWebsite: !!business.website,
         hasGoogle: !!sl.google,
+        hasTripadvisor: !!sl.tripadvisor,
         hasBooking: !!sl.booking,
+        hasYelp: !!sl.yelp,
       });
     }
 

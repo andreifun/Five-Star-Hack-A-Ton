@@ -4,8 +4,8 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { getAiGateway } from "./ai/env";
-import { generateText } from "ai";
+import { getAiGateway } from "./env";
+import { generateText, tool, jsonSchema, stepCountIs } from "ai";
 
 export const sendMessage = action({
   args: {
@@ -23,17 +23,15 @@ export const sendMessage = action({
       model?: string;
     },
   ): Promise<{ content: string; messageId: Id<"chatMessages">; isError: boolean }> => {
-    const modelId = args.model ?? "minimax/minimax-m3";
+    const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
     const gateway = getAiGateway();
 
-    // Verify ownership before writing anything
     const businessWithMetrics = (await ctx.runQuery(api.businesses.getById, {
       businessId: args.businessId,
     })) as ({ metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">) | null;
 
     if (!businessWithMetrics) throw new Error("Business not found or access denied");
 
-    // Verify the thread belongs to this business
     const thread = (await ctx.runQuery(api.chatThreads.getById, {
       threadId: args.threadId,
     })) as Doc<"chatThreads"> | null;
@@ -70,7 +68,7 @@ export const sendMessage = action({
     const recentReviews = (recentReviewsPage as { page: Doc<"reviews">[] }).page;
     const pendingTips = (pendingTipsPage as { page: Doc<"tips">[] }).page;
 
-    const systemPrompt = `You are an expert hospitality consultant and business coach for ${businessWithMetrics.name}, a ${businessWithMetrics.type} business. You help the owner understand their customer feedback and improve their service quality.
+    const systemPrompt = `You are an expert hospitality consultant and business intelligence assistant for ${businessWithMetrics.name}, a ${businessWithMetrics.type} business. You help the owner deeply understand customer feedback, identify trends, and take action.
 
 Business Profile:
 - Name: ${businessWithMetrics.name}
@@ -78,28 +76,28 @@ Business Profile:
 - Location: ${[businessWithMetrics.city, businessWithMetrics.country].filter(Boolean).join(", ") || "Not specified"}
 - Description: ${businessWithMetrics.description || "Not provided"}
 - Price range: ${businessWithMetrics.priceRange || "Not specified"}
-${businessWithMetrics.cuisineTypes?.length ? `- Cuisine types: ${businessWithMetrics.cuisineTypes.join(", ")}` : ""}
+${businessWithMetrics.cuisineTypes?.length ? `- Cuisine: ${businessWithMetrics.cuisineTypes.join(", ")}` : ""}
 ${businessWithMetrics.starRating ? `- Star rating: ${businessWithMetrics.starRating}` : ""}
 ${businessWithMetrics.capacity ? `- Capacity: ${businessWithMetrics.capacity} guests` : ""}
 
-Current Performance Metrics:
-- Average rating: ${metrics?.avgRating.toFixed(2) ?? "N/A"} / 5 (from ${metrics?.reviewCount ?? 0} reviews)
+Current Performance:
+- Average rating: ${metrics?.avgRating.toFixed(2) ?? "N/A"} / 5 from ${metrics?.reviewCount ?? 0} reviews
 - Sentiment: ${metrics ? `${metrics.sentimentBreakdown.positive} positive, ${metrics.sentimentBreakdown.neutral} neutral, ${metrics.sentimentBreakdown.negative} negative` : "N/A"}
-- Top topics in reviews: ${metrics?.topTopics.slice(0, 8).join(", ") || "None yet"}
-- Pending improvement tips: ${metrics?.pendingTipsCount ?? 0}
+- Positivity score: ${metrics?.positivityScore?.toFixed(1) ?? "N/A"} (scale: −10 very bad → +10 excellent)
+- Top review topics: ${metrics?.topTopics.slice(0, 8).join(", ") || "None yet"}
+- Open improvement tips: ${metrics?.pendingTipsCount ?? 0}
 
-Recent Customer Reviews (last 10):
-${recentReviews.length > 0 ? recentReviews.map((r: Doc<"reviews">) => `- [${r.rating}/5, ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "No reviews yet."}
+Recent Reviews (last 10):
+${recentReviews.length > 0 ? recentReviews.map((r: Doc<"reviews">) => `[${r.rating}★ ${r.sentiment ?? ""} · ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "No reviews yet."}
 
-Active Improvement Tips:
-${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `- [${t.priority}] ${t.title}: ${t.content}`).join("\n") : "No pending tips."}
+Pending Improvement Tips:
+${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] ${t.title}: ${t.content}`).join("\n") : "No pending tips."}
 
-Your role:
-- Answer questions about the business's performance, reviews, and improvement areas
-- Provide specific, actionable advice tailored to this ${businessWithMetrics.type}
-- Reference actual data from reviews and metrics when relevant
-- Be encouraging but honest about areas needing improvement
-- Keep responses concise and practical`;
+## Instructions
+- Use your tools proactively. If the user asks about specific topics, sentiment, or ratings — search for those reviews rather than guessing.
+- When you identify a concrete action the owner should take, create a todo item for them using create_todo.
+- Reference specific review data in your analysis.
+- Be direct, specific, and practical. Keep responses concise.`;
 
     const messages: { role: "user" | "assistant"; content: string }[] = history
       .filter((m: Doc<"chatMessages">) => m.role === "user" || m.role === "assistant")
@@ -119,7 +117,125 @@ Your role:
         model: gateway(modelId),
         system: systemPrompt,
         messages,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
+        stopWhen: stepCountIs(5),
+        tools: {
+          search_reviews: tool({
+            description:
+              "Search and filter customer reviews by text, sentiment, rating, or source platform. Use this to find specific feedback patterns or validate claims about the business.",
+            inputSchema: jsonSchema<{
+              query?: string;
+              sentiment?: "positive" | "neutral" | "negative";
+              source?: "google" | "tripadvisor" | "booking" | "yelp" | "manual" | "other";
+              minRating?: number;
+              maxRating?: number;
+              limit?: number;
+            }>({
+              type: "object",
+              properties: {
+                query: { type: "string", description: "Text to search in review content" },
+                sentiment: { type: "string", enum: ["positive", "neutral", "negative"], description: "Filter by review sentiment" },
+                source: { type: "string", enum: ["google", "tripadvisor", "booking", "yelp", "manual", "other"], description: "Filter by review platform" },
+                minRating: { type: "number", minimum: 1, maximum: 5, description: "Minimum star rating" },
+                maxRating: { type: "number", minimum: 1, maximum: 5, description: "Maximum star rating" },
+                limit: { type: "number", minimum: 1, maximum: 20, description: "How many reviews to return (default 10)" },
+              },
+            }),
+            execute: async ({ query, sentiment, source, minRating, maxRating, limit }) => {
+              const reviews = await ctx.runQuery(internal.reviews.searchForAgent, {
+                businessId: args.businessId,
+                searchQuery: query,
+                sentiment,
+                source,
+                minRating,
+                maxRating,
+                limit: limit ?? 10,
+              });
+              return { reviews, count: reviews.length };
+            },
+          }),
+
+          get_low_rated_reviews: tool({
+            description:
+              "Fetch the most recent low-rated reviews to understand what customers complain about. Good for diagnosing recurring problems.",
+            inputSchema: jsonSchema<{ maxRating?: number; limit?: number }>({
+              type: "object",
+              properties: {
+                maxRating: { type: "number", minimum: 1, maximum: 3, description: "Maximum rating to include (default: 2)" },
+                limit: { type: "number", minimum: 1, maximum: 20, description: "How many reviews to return" },
+              },
+            }),
+            execute: async ({ maxRating, limit }) => {
+              const reviews = await ctx.runQuery(internal.reviews.searchForAgent, {
+                businessId: args.businessId,
+                maxRating: maxRating ?? 2,
+                limit: limit ?? 10,
+              });
+              return { reviews, count: reviews.length };
+            },
+          }),
+
+          get_tips: tool({
+            description:
+              "Retrieve improvement tips. Check what recommendations have been generated and their completion status.",
+            inputSchema: jsonSchema<{
+              status?: "pending" | "in_progress" | "done" | "dismissed";
+              limit?: number;
+            }>({
+              type: "object",
+              properties: {
+                status: { type: "string", enum: ["pending", "in_progress", "done", "dismissed"], description: "Filter by status" },
+                limit: { type: "number", minimum: 1, maximum: 30 },
+              },
+            }),
+            execute: async ({ status, limit }) => {
+              const tipsPage = await ctx.runQuery(api.tips.listByBusiness, {
+                businessId: args.businessId,
+                paginationOpts: { numItems: limit ?? 20, cursor: null },
+                status,
+              });
+              const tips = (tipsPage as { page: Doc<"tips">[] }).page;
+              return {
+                tips: tips.map((t) => ({
+                  title: t.title,
+                  category: t.category,
+                  priority: t.priority,
+                  status: t.status,
+                  content: t.content,
+                })),
+                count: tips.length,
+              };
+            },
+          }),
+
+          create_todo: tool({
+            description:
+              "Create an action item card for the business owner to see and complete. The todo appears in a panel on screen. Use this whenever you identify a specific, concrete task the owner should do — e.g. after analysing reviews, identifying a training need, or spotting a quick win.",
+            inputSchema: jsonSchema<{
+              title: string;
+              description: string;
+              priority: "high" | "medium" | "low";
+            }>({
+              type: "object",
+              required: ["title", "description", "priority"],
+              properties: {
+                title: { type: "string", description: "Short, actionable title (e.g. 'Address slow service complaints')" },
+                description: { type: "string", description: "Detailed explanation: what to do, why it matters, and suggested steps. Be specific." },
+                priority: { type: "string", enum: ["high", "medium", "low"], description: "Impact-based priority" },
+              },
+            }),
+            execute: async ({ title, description, priority }) => {
+              const id = await ctx.runMutation(internal.agentTodos.create, {
+                businessId: args.businessId,
+                threadId: args.threadId,
+                title,
+                description,
+                priority,
+              });
+              return { success: true, todoId: id, created: title };
+            },
+          }),
+        },
       });
 
       assistantContent = result.text;

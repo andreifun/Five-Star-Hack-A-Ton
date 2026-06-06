@@ -255,4 +255,16 @@ export default defineSchema({
     .index("by_threadId", ["threadId"])
     .index("by_threadId_and_role", ["threadId", "role"])
     .index("by_businessId", ["businessId"]),
+
+  agentTodos: defineTable({
+    businessId: v.id("businesses"),
+    threadId: v.id("chatThreads"),
+    title: v.string(),
+    description: v.string(),
+    priority: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+    isCompleted: v.boolean(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_businessId", ["businessId"])
+    .index("by_businessId_and_isCompleted", ["businessId", "isCompleted"]),
 });
