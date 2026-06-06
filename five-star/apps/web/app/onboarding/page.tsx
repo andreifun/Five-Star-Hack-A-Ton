@@ -75,11 +75,14 @@ function OnboardingForm() {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
   const canSubmit = form.name.trim().length > 0 && form.type !== ""
 
   async function handleSubmit() {
     if (!form.name || !form.type) return
     setIsSubmitting(true)
+    setSubmitError(null)
     try {
       const id = await createBusiness({
         name: form.name,
@@ -92,6 +95,8 @@ function OnboardingForm() {
         seasonality: (form.seasonality as Seasonality) || undefined,
       })
       router.push(`/businesses/${id}/setup`)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -218,7 +223,10 @@ function OnboardingForm() {
                 </Select>
               </div>
             </CardContent>
-            <CardFooter className="flex justify-end">
+            <CardFooter className="flex flex-col items-end gap-2">
+              {submitError && (
+                <p className="w-full text-sm text-destructive">{submitError}</p>
+              )}
               <Button onClick={handleSubmit} disabled={isSubmitting || !canSubmit}>
                 {isSubmitting ? "Creating…" : "Create business"}
               </Button>
