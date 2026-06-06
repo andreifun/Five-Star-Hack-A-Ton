@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!resp.ok) {
-    console.error("SerpAPI error:", resp.status);
+    console.error("SerpAPI error:", resp.status, await resp.text());
     return NextResponse.json([]);
   }
 
@@ -35,30 +35,21 @@ export async function GET(req: NextRequest) {
     local_results?: Array<{
       title?: string;
       address?: string;
-      // SerpAPI data_id is the hex CID used by the scraping pipeline
       data_id?: string;
-      place_id?: string;
-      reviews_link?: string;
     }>;
   };
 
   const results = (data.local_results ?? [])
     .slice(0, 3)
-    .filter((r) => r.title && (r.data_id ?? r.place_id ?? r.reviews_link))
-    .map((r) => {
-      // Prefer data_id — it's the hex CID that setupBusiness.ts extracts via
-      // the !1s(0x...) regex and uses for the SerpAPI place + reviews lookup.
-      let mapsUrl: string;
-      if (r.data_id) {
-        const encoded = encodeURIComponent(r.title ?? "");
-        mapsUrl = `https://www.google.com/maps/place/${encoded}/data=!1s${r.data_id}`;
-      } else if (r.place_id) {
-        mapsUrl = `https://www.google.com/maps/place/?q=place_id:${r.place_id}`;
-      } else {
-        mapsUrl = r.reviews_link!;
-      }
-      return { name: r.title!, address: r.address ?? "", mapsUrl };
-    });
+    .filter((r): r is { title: string; address?: string; data_id: string } =>
+      !!(r.title && r.data_id),
+    )
+    .map((r) => ({
+      name: r.title,
+      address: r.address ?? "",
+      mapsUrl: `https://www.google.com/maps/place/${encodeURIComponent(r.title)}/data=!1s${r.data_id}`,
+      dataId: r.data_id,
+    }));
 
   return NextResponse.json(results);
 }

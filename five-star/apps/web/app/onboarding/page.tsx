@@ -54,13 +54,12 @@ interface FormState {
   seasonality: Seasonality | ""
 }
 
-type PlaceSuggestion = { name: string; address: string; mapsUrl: string; dataId: string }
+type PlaceSuggestion = { name: string; address: string; mapsUrl: string; dataId?: string }
 
 function OnboardingForm() {
   const router = useRouter()
   const createBusiness = useMutation(api.businesses.create)
   const businesses = useQuery(api.businesses.listAllByCurrentUser)
-  const getMapsOptions = useAction(api.scraper.getMapsOptions)
   const scrapeMenuFromUrl = useAction(api.scraper.scrapeMenuFromUrl)
   const hasBusinesses = (businesses?.length ?? 0) > 0
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -86,26 +85,33 @@ function OnboardingForm() {
   const [isSearching, setIsSearching] = useState(false)
   const [isScraping, setIsScraping] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [noResults, setNoResults] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Action 1: debounced search as the user types
+  // Step 1: debounced search via Next.js API route (reads SERPAPI_API_KEY from .env)
   useEffect(() => {
     if (selectedPlace) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (form.name.trim().length < 3) {
+    const query = form.name.trim()
+    if (query.length < 3) {
       setSuggestions([])
       setShowSuggestions(false)
+      setNoResults(false)
       return
     }
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true)
+      setNoResults(false)
       try {
-        const results = await getMapsOptions({ businessName: form.name.trim() })
+        const resp = await fetch(`/api/places?q=${encodeURIComponent(query)}`)
+        const results: PlaceSuggestion[] = resp.ok ? await resp.json() : []
         setSuggestions(results)
         setShowSuggestions(results.length > 0)
+        setNoResults(results.length === 0)
       } catch {
         setSuggestions([])
         setShowSuggestions(false)
+        setNoResults(true)
       } finally {
         setIsSearching(false)
       }
@@ -113,15 +119,15 @@ function OnboardingForm() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [form.name, selectedPlace])
 
-  // Action 2: triggered when user picks a place
+  // Step 2: triggered when user picks a place — background scrape
   async function handlePlaceSelect(place: PlaceSuggestion) {
     setSelectedPlace(place)
     set("name", place.name)
     set("google", place.mapsUrl)
     setSuggestions([])
     setShowSuggestions(false)
+    setNoResults(false)
 
-    // Fire-and-forget background scrape — logs results when done
     setIsScraping(true)
     try {
       const result = await scrapeMenuFromUrl({ mapsUrl: place.mapsUrl, dataId: place.dataId })
@@ -138,6 +144,7 @@ function OnboardingForm() {
     set("google", "")
     setSuggestions([])
     setShowSuggestions(false)
+    setNoResults(false)
   }
 
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -228,6 +235,11 @@ function OnboardingForm() {
                     >
                       <X className="size-3.5" />
                     </button>
+                  )}
+                  {noResults && !isSearching && !selectedPlace && form.name.trim().length >= 3 && (
+                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border bg-popover shadow-lg">
+                      <p className="px-3 py-3 text-sm text-muted-foreground">No places found for "{form.name.trim()}"</p>
+                    </div>
                   )}
                   {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border bg-popover shadow-lg">
