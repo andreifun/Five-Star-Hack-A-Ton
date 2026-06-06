@@ -107,6 +107,7 @@ export const bulkImportInternal = internalMutation({
         businessId: args.businessId,
         ...review,
         hasText: !!review.text?.trim(),
+        sentimentScore: Math.max(-10, Math.min(10, (review.rating - 3) * 4)),
       });
     }
 
@@ -194,6 +195,7 @@ export const bulkImport = mutation({
         businessId: args.businessId,
         ...review,
         hasText: !!review.text?.trim(),
+        sentimentScore: Math.max(-10, Math.min(10, (review.rating - 3) * 4)),
       });
       imported++;
     }
