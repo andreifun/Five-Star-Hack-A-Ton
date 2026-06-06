@@ -136,8 +136,11 @@ Respond ONLY with valid JSON, no markdown:
       let reviewScores: number[] = [];
       let angerFlags: boolean[] = [];
 
+      // Strip markdown fences the model sometimes wraps around JSON
+      const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+
       try {
-        const parsed = JSON.parse(rawText.trim()) as {
+        const parsed = JSON.parse(cleaned) as {
           score: number;
           reviewScores: unknown[];
           angerFlags?: unknown[];
@@ -150,8 +153,11 @@ Respond ONLY with valid JSON, no markdown:
           ? (parsed.angerFlags as boolean[])
           : [];
       } catch {
+        // Regex fallback — extract the first number as the batch score
+        const match = cleaned.match(/-?\d+(?:\.\d+)?/);
+        if (match) batchScore = parseFloat(match[0]);
         console.error(`Failed to parse positivity response for batch starting at ${batchStart}:`, rawText);
-        // Fall through — padScores will fill everything from star ratings
+        // reviewScores/angerFlags stay empty; padScores fills from star ratings
       }
 
       // Deterministically fill any missing/mismatched entries
