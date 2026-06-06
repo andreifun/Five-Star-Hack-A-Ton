@@ -7,6 +7,38 @@ import { Doc, Id } from "../_generated/dataModel";
 import { getAiGateway } from "./env";
 import { generateText } from "ai";
 
+const BATCH_SIZE = 50;
+
+// Star-rating-based fallback score for reviews the AI skips or when parsing fails
+function starToScore(rating: number): number {
+  return Math.max(-10, Math.min(10, (rating - 3) * 4));
+}
+
+// Ensure the AI-returned array has exactly `expected` entries.
+// Any missing tail entries are filled with the deterministic fallback.
+function padScores(
+  aiScores: number[],
+  batch: Doc<"reviews">[],
+): number[] {
+  const result: number[] = [];
+  for (let i = 0; i < batch.length; i++) {
+    const ai = aiScores[i];
+    result.push(typeof ai === "number" && isFinite(ai) ? ai : starToScore(batch[i]!.rating));
+  }
+  return result;
+}
+
+function padAngerFlags(
+  aiFlags: boolean[],
+  expected: number,
+): boolean[] {
+  const result: boolean[] = [];
+  for (let i = 0; i < expected; i++) {
+    result.push(typeof aiFlags[i] === "boolean" ? aiFlags[i]! : false);
+  }
+  return result;
+}
+
 export const regenerate = action({
   args: {
     businessId: v.id("businesses"),
@@ -33,7 +65,6 @@ export const calculatePositivityForBusiness = internalAction({
     args: { businessId: Id<"businesses">; model?: string },
   ): Promise<void> => {
     const modelId = args.model ?? "google/gemma-4-31b-it";
-    const gateway = getAiGateway();
 
     const businessWithMetrics = (await ctx.runQuery(
       internal.businesses.getByIdInternal,
@@ -42,118 +73,122 @@ export const calculatePositivityForBusiness = internalAction({
 
     if (!businessWithMetrics) throw new Error("Business not found");
 
-    const reviews = (await ctx.runQuery(internal.reviews.listRecentInternal, {
-      businessId: args.businessId,
-      limit: 50,
-    })) as Doc<"reviews">[];
+    let overallScore: number | null = null;
+    let cursor: string | null = null;
+    let hasReviews = false;
 
-    if (reviews.length === 0) return;
+    // Page through ALL reviews using cursor pagination — no arbitrary upper bound
+    do {
+      const page = (await ctx.runQuery(internal.reviews.listPagedInternal, {
+        businessId: args.businessId,
+        cursor,
+        pageSize: BATCH_SIZE,
+      })) as { reviews: Doc<"reviews">[]; nextCursor: string | null };
 
-    const reviewsText = reviews
-      .map(
-        (r: Doc<"reviews">, i: number) =>
-          `[${i}] Actual stars: ${r.rating}/5${r.text ? `\nReview text: ${r.text}` : " (no text)"}`,
-      )
-      .join("\n\n");
+      const batch = page.reviews;
+      cursor = page.nextCursor;
 
-    const prompt = `You are an expert sentiment analyst. You will be given a list of customer reviews for a ${businessWithMetrics.type}, each with the actual star rating given and the review text.
+      if (batch.length === 0) break;
+      hasReviews = true;
+
+      const reviewsText = batch
+        .map(
+          (r: Doc<"reviews">, i: number) =>
+            `[${i}] Actual stars: ${r.rating}/5${r.text ? `\nReview text: ${r.text}` : " (no text)"}`,
+        )
+        .join("\n\n");
+
+      const prompt = `You are an expert sentiment analyst. You will be given a list of customer reviews for a ${businessWithMetrics.type}, each with the actual star rating given and the review text.
 
 For reviews that have text, predict what star rating (1-5) you would assign based solely on the text content — ignoring the actual stars. Then compare your text-based prediction to the actual stars given to detect misalignment.
 
 Using all of the following signals together:
 - The actual star ratings (absolute sentiment level)
 - The sentiment and tone of the review texts
-- The gap between your text-predicted stars and the actual stars (positive gap = reviewer gave more stars than text suggests; negative gap = reviewer gave fewer stars than text suggests)
+- The gap between your text-predicted stars and the actual stars
 
 Calculate:
-1. A single overall POSITIVITY SCORE for this business (−10 to 10)
-2. An individual POSITIVITY SCORE for every review (−10 to 10), in the same order as the input list — for reviews with no text, derive the score from the star rating alone (5★ ≈ +8, 4★ ≈ +4, 3★ ≈ 0, 2★ ≈ −4, 1★ ≈ −8)
-3. An individual ANGER FLAG for every review (true/false), in the same order as the input list — for reviews with no text, always use false
+1. A single overall POSITIVITY SCORE for this batch (−10 to 10)
+2. An individual POSITIVITY SCORE for every review (−10 to 10) — for reviews with no text, derive from star rating (5★=+8, 4★=+4, 3★=0, 2★=−4, 1★=−8)
+3. An individual ANGER FLAG (true/false) for every review — for reviews with no text, use false
 
-IMPORTANT: The reviewScores and angerFlags arrays MUST have exactly the same length as the input review list (${reviews.length} entries). Do not skip any index.
+The reviewScores and angerFlags arrays MUST each have exactly ${batch.length} entries, one per review in order.
 
-Scale for positivity scores:
-- −10 = extremely negative
-- 0 = completely neutral or mixed
-- +10 = extremely positive
+Scale: −10=extremely negative, 0=neutral, +10=extremely positive
 
-For the anger flag, classify whether the review tone is primarily angry/venting (true) vs. constructive criticism or genuine feedback (false). This is a nuanced distinction — use these signals:
-
-Angry = true:
-- Excessive caps, exclamation marks, or emotional outbursts
-- Personal attacks or insults toward staff
-- Hyperbolic language with no specific actionable complaint ("WORST PLACE EVER", "DISGUSTING")
-- Tone of wanting to punish rather than improve
-
-Constructive = false:
-- Specific, describable issues even if strongly worded ("the AC was broken for 3 hours")
-- Suggestions for improvement
-- Balanced tone even if the rating is 1 star
-- Strong but calm language
+Anger = true: caps/outbursts, personal attacks, hyperbole with no actionable complaint, punitive tone
+Anger = false: specific complaints, calm language, suggestions, balanced even if 1 star
 
 Reviews:
 ${reviewsText}
 
-Respond ONLY with a valid JSON object in this exact format, no markdown, no explanation:
-{"score": <overall score, one decimal allowed>, "reviewScores": [<score for review 0>, <score for review 1>, ...], "angerFlags": [<true/false for review 0>, <true/false for review 1>, ...]}`;
+Respond ONLY with valid JSON, no markdown:
+{"score": <number>, "reviewScores": [<${batch.length} numbers>], "angerFlags": [<${batch.length} booleans>]}`;
 
-    const { text: rawText } = await generateText({
-      model: gateway(modelId),
-      prompt,
-      maxOutputTokens: 1024,
-    });
+      const { text: rawText } = await generateText({
+        model: getAiGateway()(modelId),
+        prompt,
+        maxOutputTokens: 1024,
+      });
 
-    let score: number;
-    let reviewScores: number[] = [];
-    let angerFlags: boolean[] = [];
-    try {
-      const parsed = JSON.parse(rawText.trim()) as {
-        score: number;
-        reviewScores: number[];
-        angerFlags?: boolean[];
-      };
-      score = parsed.score;
-      reviewScores = Array.isArray(parsed.reviewScores) ? parsed.reviewScores : [];
-      angerFlags = Array.isArray(parsed.angerFlags) ? parsed.angerFlags : [];
-    } catch {
-      const match = rawText.match(/-?\d+(\.\d+)?/);
-      if (!match) {
-        console.error("Failed to parse positivity score:", rawText);
-        return;
+      let batchScore: number | null = null;
+      let reviewScores: number[] = [];
+      let angerFlags: boolean[] = [];
+
+      // Strip markdown fences the model sometimes wraps around JSON
+      const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+
+      try {
+        const parsed = JSON.parse(cleaned) as {
+          score: number;
+          reviewScores: unknown[];
+          angerFlags?: unknown[];
+        };
+        batchScore = typeof parsed.score === "number" ? parsed.score : null;
+        reviewScores = Array.isArray(parsed.reviewScores)
+          ? (parsed.reviewScores as number[])
+          : [];
+        angerFlags = Array.isArray(parsed.angerFlags)
+          ? (parsed.angerFlags as boolean[])
+          : [];
+      } catch {
+        // Regex fallback — extract the first number as the batch score
+        const match = cleaned.match(/-?\d+(?:\.\d+)?/);
+        if (match) batchScore = parseFloat(match[0]);
+        console.error("Failed to parse positivity response for batch:", rawText);
+        // reviewScores/angerFlags stay empty; padScores fills from star ratings
       }
-      score = parseFloat(match[0]);
-    }
 
-    score = Math.max(-10, Math.min(10, score));
+      // Deterministically fill any missing/mismatched entries
+      const filledScores = padScores(reviewScores, batch);
+      const filledFlags = padAngerFlags(angerFlags, batch.length);
 
-    await ctx.runMutation(internal.businessMetrics.setPositivityScore, {
-      businessId: args.businessId,
-      score,
-    });
-
-    if (reviewScores.length > 0) {
-      const reviewScoreEntries = reviewScores
-        .slice(0, reviews.length)
-        .map((s, i) => ({
-          reviewId: reviews[i]!._id,
-          score: Math.max(-10, Math.min(10, s)),
-        }));
+      // Use first batch score as the overall business score
+      if (overallScore === null && batchScore !== null) {
+        overallScore = Math.max(-10, Math.min(10, batchScore));
+      }
 
       await ctx.runMutation(internal.reviews.setReviewPositivityScores, {
-        entries: reviewScoreEntries,
+        entries: filledScores.map((s, i) => ({
+          reviewId: batch[i]!._id,
+          score: Math.max(-10, Math.min(10, s)),
+        })),
       });
-    }
-
-    if (angerFlags.length > 0) {
-      const angerEntries = angerFlags
-        .slice(0, reviews.length)
-        .map((isAngry, i) => ({
-          reviewId: reviews[i]!._id,
-          isAngry: Boolean(isAngry),
-        }));
 
       await ctx.runMutation(internal.reviews.setReviewAngerFlags, {
-        entries: angerEntries,
+        entries: filledFlags.map((isAngry, i) => ({
+          reviewId: batch[i]!._id,
+          isAngry,
+        })),
+      });
+    } while (cursor !== null);
+
+    if (!hasReviews) return;
+
+    if (overallScore !== null) {
+      await ctx.runMutation(internal.businessMetrics.setPositivityScore, {
+        businessId: args.businessId,
+        score: overallScore,
       });
     }
   },

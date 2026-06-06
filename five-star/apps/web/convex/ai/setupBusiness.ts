@@ -305,7 +305,7 @@ ${html.slice(0, 15000)}`,
       if (!html) return;
 
       const { text } = await generateText({
-        model: gateway(MODEL_ID),
+        model: getGateway()(MODEL_ID),
         prompt: `Extract menu items or products from this business website HTML.
 Output a JSON array with objects: { name: string, description?: string, category?: string, price?: number }.
 Only output valid JSON array, no markdown. If nothing is found, output [].

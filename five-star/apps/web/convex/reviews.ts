@@ -250,6 +250,31 @@ export const listRecentInternal = internalQuery({
   },
 });
 
+/**
+ * Cursor-paginated review fetcher for internal actions that need to score
+ * or process all reviews without an arbitrary upper bound.
+ */
+export const listPagedInternal = internalQuery({
+  args: {
+    businessId: v.id("businesses"),
+    cursor: v.union(v.string(), v.null()),
+    pageSize: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId_and_reviewDate", (q) =>
+        q.eq("businessId", args.businessId),
+      )
+      .order("desc")
+      .paginate({ numItems: args.pageSize, cursor: args.cursor });
+    return {
+      reviews: result.page,
+      nextCursor: result.isDone ? null : result.continueCursor,
+    };
+  },
+});
+
 export const setReviewPositivityScores = internalMutation({
   args: {
     entries: v.array(v.object({ reviewId: v.id("reviews"), score: v.number() })),
