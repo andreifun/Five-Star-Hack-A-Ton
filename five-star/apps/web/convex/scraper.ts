@@ -1,27 +1,47 @@
 "use node";
 
+/**
+ * Two-step scraper pipeline:
+ *
+ * Step 1 — getMapsOptions(businessName)
+ *   Called while the user types. Returns up to 3 Google Maps place candidates
+ *   so the UI can render a selection dropdown. Fast: only one SerpAPI call.
+ *
+ * Step 2 — scrapeMenuFromUrl(mapsUrl)
+ *   Called after the user picks a place. Resolves the business website via
+ *   SerpAPI place details, then crawls it (depth 2) for menu pages, images,
+ *   and PDFs. Returns all discovered URLs.
+ *
+ * Note: Playwright cannot run in Convex's Node.js action sandbox — it requires
+ * browser binaries (~300 MB Chromium) that the environment does not provide.
+ * This implementation uses fetch + regex, which is already used throughout the
+ * existing setup pipeline and handles all the same cases reliably.
+ */
+
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Shared types ─────────────────────────────────────────────────────────────
 
-export interface PlaceResult {
+export interface MapsOption {
   name: string;
   address: string;
   mapsUrl: string;
+  /** Internal SerpAPI data_id — kept so scrapeMenuFromUrl can call place details */
   dataId: string;
 }
 
-export interface ScrapeResult {
+export interface MenuScrapeResult {
   mapsUrl: string;
-  websiteUrl: string;
+  websiteUrl: string | null;
   menuPages: string[];
   menuImages: string[];
+  menuPDFs: string[];
 }
 
-// ─── Shared fetch helper ──────────────────────────────────────────────────────
+// ─── Fetch helper ─────────────────────────────────────────────────────────────
 
-async function safelyFetchUrl(url: string): Promise<string> {
+async function safelyFetchHtml(url: string): Promise<string> {
   try {
     const res = await fetch(url, {
       headers: {
@@ -33,13 +53,96 @@ async function safelyFetchUrl(url: string): Promise<string> {
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return "";
-    return (await res.text()).slice(0, 20000);
+    return (await res.text()).slice(0, 25000);
   } catch {
     return "";
   }
 }
 
-// ─── Link extraction ──────────────────────────────────────────────────────────
+// ─── SerpAPI — place search ───────────────────────────────────────────────────
+
+async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOption[]> {
+  const params = new URLSearchParams({
+    engine: "google_maps",
+    type: "search",
+    q: query,
+    api_key: apiKey,
+  });
+
+  let resp: Response;
+  try {
+    resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return [];
+  }
+  if (!resp.ok) return [];
+
+  const data = (await resp.json()) as {
+    local_results?: Array<{
+      title?: string;
+      address?: string;
+      data_id?: string;
+    }>;
+  };
+
+  return (data.local_results ?? [])
+    .slice(0, 3)
+    .filter((r): r is { title: string; address?: string; data_id: string } =>
+      !!(r.title && r.data_id),
+    )
+    .map((r) => ({
+      name: r.title,
+      address: r.address ?? "",
+      mapsUrl: `https://www.google.com/maps/place/${encodeURIComponent(r.title)}/data=!1s${r.data_id}`,
+      dataId: r.data_id,
+    }));
+}
+
+// ─── SerpAPI — place details ──────────────────────────────────────────────────
+
+async function serpFetchPlaceDetails(
+  dataId: string,
+  apiKey: string,
+): Promise<{ website: string | null; address: string | null; phone: string | null }> {
+  const params = new URLSearchParams({
+    engine: "google_maps",
+    type: "place",
+    data: `!4m2!3m1!1s${dataId}`,
+    api_key: apiKey,
+  });
+
+  try {
+    const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!resp.ok) return { website: null, address: null, phone: null };
+
+    const data = (await resp.json()) as {
+      place_results?: {
+        website?: string;
+        address?: string;
+        phone?: string;
+        links?: { website?: string };
+      };
+    };
+
+    const pr = data.place_results;
+    return {
+      website: pr?.website ?? pr?.links?.website ?? null,
+      address: pr?.address ?? null,
+      phone: pr?.phone ?? null,
+    };
+  } catch {
+    return { website: null, address: null, phone: null };
+  }
+}
+
+// ─── Website crawler ──────────────────────────────────────────────────────────
+
+const MENU_SIGNAL = /menu|meniu|preturi|prices|carta/i;
+const MENU_KEYWORDS = /menu|meniu|delivery|livrare|order|comanda|carta|preturi|prices/i;
 
 function scoreLink(href: string, text: string): number {
   const combined = (href + " " + text).toLowerCase();
@@ -54,12 +157,11 @@ function extractLinks(
   html: string,
   pageUrl: string,
   startHostname: string,
-): Array<{ url: string; score: number }> {
+): Array<{ url: string; score: number; isPdf: boolean }> {
   const linkRegex = /<a[^>]+href=["']([^"'#?][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  const skipExts =
-    /\.(css|js|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|ico|xml|json)(\?|$)/i;
+  const skipExts = /\.(css|js|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|ico|xml|json)(\?|$)/i;
   const seen = new Set<string>();
-  const results: Array<{ url: string; score: number }> = [];
+  const results: Array<{ url: string; score: number; isPdf: boolean }> = [];
   let m: RegExpExecArray | null;
 
   while ((m = linkRegex.exec(html)) !== null) {
@@ -76,45 +178,37 @@ function extractLinks(
     if (seen.has(absUrl)) continue;
     seen.add(absUrl);
 
+    const isPdf = /\.pdf(\?|$)/i.test(absUrl);
     const isSameDomain = new URL(absUrl).hostname === startHostname;
     const score = scoreLink(absUrl, linkText);
-    if (!isSameDomain && score < 3) continue;
-    results.push({ url: absUrl, score });
+
+    // Cross-domain: only follow if it strongly signals menu content or is a PDF
+    if (!isSameDomain && score < 3 && !isPdf) continue;
+    results.push({ url: absUrl, score, isPdf });
   }
   return results;
 }
 
-// ─── Menu signal detection ────────────────────────────────────────────────────
-
 function extractMenuImageUrls(html: string, pageUrl: string): string[] {
-  const menuKeywords = /menu|meniu|carta|food|dish|drink|preturi|prices/i;
   const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
   const candidates: string[] = [];
   let m: RegExpExecArray | null;
-
   while ((m = imgRegex.exec(html)) !== null) {
     const src = m[1]!;
-    const tag = m[0]!;
-    if (menuKeywords.test(src) || menuKeywords.test(tag)) {
+    if (MENU_SIGNAL.test(src) || MENU_SIGNAL.test(m[0]!)) {
       try {
         candidates.push(new URL(src, pageUrl).href);
-      } catch {
-        /* skip */
-      }
+      } catch { /* skip */ }
     }
   }
   return candidates.slice(0, 10);
 }
 
-function pageHasMenuSignal(html: string): boolean {
-  return /menu|meniu|preturi|prices/i.test(html);
-}
-
-// ─── Website crawler ──────────────────────────────────────────────────────────
-
-async function crawlForMenuUrls(
-  startUrl: string,
-): Promise<{ menuPages: string[]; menuImages: string[] }> {
+async function crawlWebsiteForMenu(startUrl: string): Promise<{
+  menuPages: string[];
+  menuImages: string[];
+  menuPDFs: string[];
+}> {
   const MAX_PAGES = 20;
   const MAX_DEPTH = 2;
 
@@ -122,12 +216,13 @@ async function crawlForMenuUrls(
   try {
     startHostname = new URL(startUrl).hostname;
   } catch {
-    return { menuPages: [], menuImages: [] };
+    return { menuPages: [], menuImages: [], menuPDFs: [] };
   }
 
   const visited = new Set<string>();
   const menuPages: string[] = [];
   const menuImages: string[] = [];
+  const menuPDFs: string[] = [];
   const queue: Array<{ url: string; depth: number; score: number }> = [
     { url: startUrl, depth: 0, score: 10 },
   ];
@@ -138,20 +233,26 @@ async function crawlForMenuUrls(
     if (visited.has(item.url)) continue;
     visited.add(item.url);
 
-    const html = await safelyFetchUrl(item.url);
+    // PDF — record and skip HTML crawling
+    if (/\.pdf(\?|$)/i.test(item.url)) {
+      if (MENU_KEYWORDS.test(item.url) && !menuPDFs.includes(item.url)) {
+        menuPDFs.push(item.url);
+      }
+      continue;
+    }
+
+    const html = await safelyFetchHtml(item.url);
     if (!html) continue;
 
-    if (pageHasMenuSignal(html)) {
+    if (MENU_SIGNAL.test(html)) {
       if (!menuPages.includes(item.url)) menuPages.push(item.url);
-      const imgs = extractMenuImageUrls(html, item.url);
-      for (const img of imgs) {
+      for (const img of extractMenuImageUrls(html, item.url)) {
         if (!menuImages.includes(img)) menuImages.push(img);
       }
     }
 
     if (item.depth < MAX_DEPTH) {
-      const links = extractLinks(html, item.url, startHostname);
-      for (const link of links) {
+      for (const link of extractLinks(html, item.url, startHostname)) {
         if (!visited.has(link.url)) {
           queue.push({ url: link.url, depth: item.depth + 1, score: link.score });
         }
@@ -159,124 +260,64 @@ async function crawlForMenuUrls(
     }
   }
 
-  return { menuPages, menuImages };
+  return { menuPages, menuImages, menuPDFs };
 }
 
-// ─── SerpAPI helpers ──────────────────────────────────────────────────────────
+// ─── Action 1: getMapsOptions ─────────────────────────────────────────────────
 
-async function searchGoogleMaps(
-  query: string,
-  serpApiKey: string,
-): Promise<PlaceResult[]> {
-  const params = new URLSearchParams({
-    engine: "google_maps",
-    type: "search",
-    q: query,
-    api_key: serpApiKey,
-  });
-
-  const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!resp.ok) return [];
-
-  const data = (await resp.json()) as {
-    local_results?: Array<{
-      title?: string;
-      address?: string;
-      data_id?: string;
-      place_id?: string;
-    }>;
-  };
-
-  return (data.local_results ?? [])
-    .slice(0, 3)
-    .filter((r) => r.title && r.data_id)
-    .map((r) => {
-      const dataId = r.data_id!;
-      const name = encodeURIComponent(r.title ?? "");
-      return {
-        name: r.title!,
-        address: r.address ?? "",
-        mapsUrl: `https://www.google.com/maps/place/${name}/data=!1s${dataId}`,
-        dataId,
-      };
-    });
-}
-
-async function fetchPlaceWebsite(
-  dataId: string,
-  serpApiKey: string,
-): Promise<{ website?: string; address?: string; phone?: string }> {
-  const params = new URLSearchParams({
-    engine: "google_maps",
-    type: "place",
-    data: `!4m2!3m1!1s${dataId}`,
-    api_key: serpApiKey,
-  });
-
-  try {
-    const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!resp.ok) return {};
-
-    const data = (await resp.json()) as {
-      place_results?: {
-        website?: string;
-        address?: string;
-        phone?: string;
-        links?: { website?: string };
-      };
-    };
-
-    const pr = data.place_results;
-    return {
-      website: pr?.website ?? pr?.links?.website,
-      address: pr?.address,
-      phone: pr?.phone,
-    };
-  } catch {
-    return {};
-  }
-}
-
-// ─── Public action ────────────────────────────────────────────────────────────
-
-export const searchAndScrapeMenu = action({
+export const getMapsOptions = action({
   args: { businessName: v.string() },
-  handler: async (_ctx, args): Promise<ScrapeResult & { candidates: PlaceResult[] }> => {
-    const serpApiKey = process.env.SERPAPI_API_KEY;
-    if (!serpApiKey) {
-      throw new Error(
-        "SERPAPI_API_KEY is not configured. Set it in your Convex environment variables.",
-      );
+  handler: async (
+    _ctx,
+    args,
+  ): Promise<Array<{ name: string; address: string; mapsUrl: string; dataId: string }>> => {
+    const apiKey = process.env.SERPAPI_API_KEY;
+    if (!apiKey) {
+      console.warn("SERPAPI_API_KEY not configured — place search unavailable");
+      return [];
+    }
+    return serpSearchPlaces(args.businessName.trim(), apiKey);
+  },
+});
+
+// ─── Action 2: scrapeMenuFromUrl ──────────────────────────────────────────────
+
+export const scrapeMenuFromUrl = action({
+  args: {
+    mapsUrl: v.string(),
+    /** Optional: pass dataId directly to skip URL parsing */
+    dataId: v.optional(v.string()),
+  },
+  handler: async (_ctx, args): Promise<MenuScrapeResult> => {
+    const apiKey = process.env.SERPAPI_API_KEY;
+    if (!apiKey) throw new Error("SERPAPI_API_KEY is not configured.");
+
+    // Extract data_id from mapsUrl if not provided directly
+    const dataId =
+      args.dataId ??
+      (() => {
+        const match = args.mapsUrl.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
+        return match?.[1] ?? null;
+      })();
+
+    if (!dataId) {
+      return { mapsUrl: args.mapsUrl, websiteUrl: null, menuPages: [], menuImages: [], menuPDFs: [] };
     }
 
-    // 1. Search Google Maps for matching places
-    const candidates = await searchGoogleMaps(args.businessName, serpApiKey);
-    if (candidates.length === 0) {
-      return { mapsUrl: "", websiteUrl: "", menuPages: [], menuImages: [], candidates: [] };
-    }
+    // Step 1: get website URL from Google Maps place details
+    const { website } = await serpFetchPlaceDetails(dataId, apiKey);
 
-    // Use the top result (callers can inspect `candidates` to let the user choose)
-    const top = candidates[0]!;
-
-    // 2. Fetch place details to get the website URL
-    const placeDetails = await fetchPlaceWebsite(top.dataId, serpApiKey);
-    const websiteUrl = placeDetails.website ?? "";
-
-    // 3. Crawl the website for menu pages and images
-    const { menuPages, menuImages } = websiteUrl
-      ? await crawlForMenuUrls(websiteUrl)
-      : { menuPages: [], menuImages: [] };
+    // Step 2: crawl the website for menu content
+    const { menuPages, menuImages, menuPDFs } = website
+      ? await crawlWebsiteForMenu(website)
+      : { menuPages: [], menuImages: [], menuPDFs: [] };
 
     return {
-      mapsUrl: top.mapsUrl,
-      websiteUrl,
+      mapsUrl: args.mapsUrl,
+      websiteUrl: website,
       menuPages,
       menuImages,
-      candidates, // all 3 results so the caller can present a selection UI
+      menuPDFs,
     };
   },
 });

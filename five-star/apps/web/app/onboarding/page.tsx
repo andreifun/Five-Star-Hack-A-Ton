@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { useMutation, useQuery } from "convex/react"
+import { useMutation, useQuery, useAction } from "convex/react"
 import { UserButton } from "@clerk/nextjs"
 import { api } from "@/convex/_generated/api"
 import { AuthGate } from "@/components/auth-gate"
@@ -54,10 +54,14 @@ interface FormState {
   seasonality: Seasonality | ""
 }
 
+type PlaceSuggestion = { name: string; address: string; mapsUrl: string; dataId: string }
+
 function OnboardingForm() {
   const router = useRouter()
   const createBusiness = useMutation(api.businesses.create)
   const businesses = useQuery(api.businesses.listAllByCurrentUser)
+  const getMapsOptions = useAction(api.scraper.getMapsOptions)
+  const scrapeMenuFromUrl = useAction(api.scraper.scrapeMenuFromUrl)
   const hasBusinesses = (businesses?.length ?? 0) > 0
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -76,13 +80,15 @@ function OnboardingForm() {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  type PlaceSuggestion = { name: string; address: string; mapsUrl: string }
+  // ── Place search state ──────────────────────────────────────────────────────
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([])
   const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+  const [isScraping, setIsScraping] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Action 1: debounced search as the user types
   useEffect(() => {
     if (selectedPlace) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -94,8 +100,7 @@ function OnboardingForm() {
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true)
       try {
-        const resp = await fetch(`/api/places?q=${encodeURIComponent(form.name.trim())}`)
-        const results: PlaceSuggestion[] = resp.ok ? await resp.json() : []
+        const results = await getMapsOptions({ businessName: form.name.trim() })
         setSuggestions(results)
         setShowSuggestions(results.length > 0)
       } catch {
@@ -105,18 +110,27 @@ function OnboardingForm() {
         setIsSearching(false)
       }
     }, 600)
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [form.name, selectedPlace])
 
-  function handlePlaceSelect(place: PlaceSuggestion) {
-    console.log("Selected place:", place)
+  // Action 2: triggered when user picks a place
+  async function handlePlaceSelect(place: PlaceSuggestion) {
     setSelectedPlace(place)
     set("name", place.name)
     set("google", place.mapsUrl)
     setSuggestions([])
     setShowSuggestions(false)
+
+    // Fire-and-forget background scrape — logs results when done
+    setIsScraping(true)
+    try {
+      const result = await scrapeMenuFromUrl({ mapsUrl: place.mapsUrl, dataId: place.dataId })
+      console.log("Scrape result:", result)
+    } catch (err) {
+      console.warn("Background scrape failed:", err)
+    } finally {
+      setIsScraping(false)
+    }
   }
 
   function handleClearPlace() {
@@ -241,12 +255,18 @@ function OnboardingForm() {
                   )}
                 </div>
                 {selectedPlace && (
-                  <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 dark:border-green-900 dark:bg-green-950/30">
+                  <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 dark:border-green-900 dark:bg-green-950/30">
                     <MapPin className="size-4 shrink-0 text-green-600 dark:text-green-400" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-green-800 dark:text-green-300">{selectedPlace.name}</p>
                       <p className="truncate text-xs text-green-600 dark:text-green-500">{selectedPlace.address}</p>
                     </div>
+                    {isScraping && (
+                      <div className="flex shrink-0 items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                        <Loader2 className="size-3 animate-spin" />
+                        <span>Scanning…</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
