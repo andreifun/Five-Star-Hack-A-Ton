@@ -411,7 +411,7 @@ ${html.slice(0, 18000)}`,
         }
       }
 
-      async function extractMenuFromImage(imageBytes: Uint8Array, mimeType: string): Promise<MenuItem[]> {
+      async function extractMenuFromImage(imageBytes: Uint8Array): Promise<MenuItem[]> {
         try {
           const { text: raw } = await generateText({
             model: gateway("anthropic/claude-sonnet-4-5"),
@@ -419,7 +419,7 @@ ${html.slice(0, 18000)}`,
               {
                 role: "user",
                 content: [
-                  { type: "image", image: imageBytes, mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif" },
+                  { type: "image", image: imageBytes },
                   {
                     type: "text",
                     text: `This is a photo of a restaurant menu. Extract all visible menu items you can actually read in the image. Return a JSON array: [{ name: string, description?: string, category?: string, price?: number }]. If you cannot read any menu items, return []. Only output valid JSON array, no markdown.`,
@@ -436,15 +436,14 @@ ${html.slice(0, 18000)}`,
         }
       }
 
-      async function fetchImageBytes(url: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+      async function fetchImageBytes(url: string): Promise<Uint8Array | null> {
         try {
           const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
           if (!resp.ok) return null;
-          const contentType = resp.headers.get("content-type") ?? "image/jpeg";
-          const mimeType = contentType.split(";")[0]!.trim();
-          if (!mimeType.startsWith("image/")) return null;
+          const contentType = resp.headers.get("content-type") ?? "";
+          if (!contentType.startsWith("image/")) return null;
           const buffer = await resp.arrayBuffer();
-          return { bytes: new Uint8Array(buffer), mimeType };
+          return new Uint8Array(buffer);
         } catch {
           return null;
         }
@@ -517,7 +516,7 @@ ${homeHtml.slice(0, 10000)}`,
           for (const imgUrl of imageUrls) {
             const imgData = await fetchImageBytes(imgUrl);
             if (!imgData) continue;
-            const items = await extractMenuFromImage(imgData.bytes, imgData.mimeType);
+            const items = await extractMenuFromImage(imgData);
             if (items.length > 0) {
               menuItems = items;
               break;
