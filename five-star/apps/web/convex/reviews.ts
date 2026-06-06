@@ -341,6 +341,97 @@ export const remove = mutation({
   },
 });
 
+export const searchForAgent = internalQuery({
+  args: {
+    businessId: v.id("businesses"),
+    searchQuery: v.optional(v.string()),
+    sentiment: v.optional(sentimentValidator),
+    source: v.optional(sourceValidator),
+    minRating: v.optional(v.number()),
+    maxRating: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+
+    const format = (r: {
+      rating: number;
+      sentiment?: "positive" | "neutral" | "negative";
+      source: string;
+      text?: string;
+      reviewDate: number;
+      reviewerName?: string;
+      topics?: string[];
+    }) => ({
+      rating: r.rating,
+      sentiment: r.sentiment,
+      source: r.source,
+      text: r.text,
+      date: new Date(r.reviewDate).toISOString().split("T")[0],
+      reviewer: r.reviewerName,
+      topics: r.topics,
+    });
+
+    if (args.searchQuery) {
+      const results = await ctx.db
+        .query("reviews")
+        .withSearchIndex("search_text", (q) =>
+          q.search("text", args.searchQuery!).eq("businessId", args.businessId),
+        )
+        .take(limit * 3);
+
+      return results
+        .filter((r) => {
+          if (args.minRating !== undefined && r.rating < args.minRating) return false;
+          if (args.maxRating !== undefined && r.rating > args.maxRating) return false;
+          if (args.sentiment && r.sentiment !== args.sentiment) return false;
+          if (args.source && r.source !== args.source) return false;
+          return true;
+        })
+        .slice(0, limit)
+        .map(format);
+    }
+
+    if (args.sentiment) {
+      const results = await ctx.db
+        .query("reviews")
+        .withIndex("by_businessId_and_sentiment", (q) =>
+          q.eq("businessId", args.businessId).eq("sentiment", args.sentiment!),
+        )
+        .order("desc")
+        .take(limit * 2);
+
+      return results
+        .filter((r) => {
+          if (args.minRating !== undefined && r.rating < args.minRating) return false;
+          if (args.maxRating !== undefined && r.rating > args.maxRating) return false;
+          if (args.source && r.source !== args.source) return false;
+          return true;
+        })
+        .slice(0, limit)
+        .map(format);
+    }
+
+    const results = await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId_and_reviewDate", (q) =>
+        q.eq("businessId", args.businessId),
+      )
+      .order("desc")
+      .take(limit * 2);
+
+    return results
+      .filter((r) => {
+        if (args.minRating !== undefined && r.rating < args.minRating) return false;
+        if (args.maxRating !== undefined && r.rating > args.maxRating) return false;
+        if (args.source && r.source !== args.source) return false;
+        return true;
+      })
+      .slice(0, limit)
+      .map(format);
+  },
+});
+
 export const backfillHasText = internalMutation({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, args) => {
