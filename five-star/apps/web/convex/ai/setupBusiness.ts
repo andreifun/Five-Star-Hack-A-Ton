@@ -128,7 +128,8 @@ async function runTask(
       const html = await safelyFetchUrl(business.website);
       if (!html) return;
       const { text } = await generateText({
-          model: getGateway()(MODEL_ID),
+        model: getGateway()(MODEL_ID),
+        prompt: `Extract from this business website HTML the following fields in JSON: description (string), openingHours (string), phone (string), address (string), city (string), country (string). Only output valid JSON, no markdown.
 
 HTML:
 ${html.slice(0, 15000)}`,
