@@ -4,12 +4,8 @@ import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { createGatewayProvider } from "@ai-sdk/gateway";
+import { getAiGateway } from "./ai/env";
 import { generateText } from "ai";
-
-const gateway = createGatewayProvider({
-  apiKey: process.env.AI_GATEWAY_API_KEY,
-});
 
 interface GeneratedTip {
   category:
@@ -66,6 +62,7 @@ export const generateTipsForBusiness = internalAction({
     args: { businessId: Id<"businesses">; model?: string },
   ): Promise<void> => {
     const modelId = args.model ?? "minimax/minimax-m3";
+    const gateway = getAiGateway();
 
     const businessWithMetrics = (await ctx.runQuery(
       internal.businesses.getByIdInternal,

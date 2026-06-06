@@ -2,11 +2,12 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { getOptionalSerpApiKey } from "./ai/env";
 
 export const searchPlaces = action({
   args: { query: v.string() },
   handler: async (_ctx, args): Promise<Array<{ name: string; address: string; mapsUrl: string }>> => {
-    const serpApiKey = process.env.SERPAPI_API_KEY;
+    const serpApiKey = getOptionalSerpApiKey();
     if (!serpApiKey) {
       console.warn("SERPAPI_API_KEY not configured — place search unavailable");
       return [];

@@ -20,6 +20,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { getSerpApiKey } from "./ai/env";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -271,7 +272,7 @@ export const getMapsOptions = action({
     _ctx,
     args,
   ): Promise<Array<{ name: string; address: string; mapsUrl: string; dataId: string }>> => {
-    const apiKey = process.env.SERPAPI_API_KEY;
+    const apiKey = getSerpApiKey();
     if (!apiKey) {
       console.warn("SERPAPI_API_KEY not configured — place search unavailable");
       return [];
@@ -289,7 +290,7 @@ export const scrapeMenuFromUrl = action({
     dataId: v.optional(v.string()),
   },
   handler: async (_ctx, args): Promise<MenuScrapeResult> => {
-    const apiKey = process.env.SERPAPI_API_KEY;
+    const apiKey = getSerpApiKey();
     if (!apiKey) throw new Error("SERPAPI_API_KEY is not configured.");
 
     // Extract data_id from mapsUrl if not provided directly

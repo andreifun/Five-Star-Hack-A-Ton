@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction, ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { createGatewayProvider } from "@ai-sdk/gateway";
+import { getAiGateway, getSerpApiKey } from "./ai/env";
 import { generateText } from "ai";
 import { createHash } from "crypto";
 
@@ -18,9 +18,7 @@ function contentFingerprint(
     .slice(0, 20);
 }
 
-const gateway = createGatewayProvider({
-  apiKey: process.env.AI_GATEWAY_API_KEY,
-});
+const getGateway = getAiGateway;
 
 const MODEL_ID = "minimax/minimax-m3";
 
@@ -111,7 +109,7 @@ async function runTask(
     case "classify_location": {
       if (!business.location) return;
       const { text } = await generateText({
-        model: gateway(MODEL_ID),
+        model: getGateway()(MODEL_ID),
         prompt: `Is the following location rural or urban? Reply with exactly one word: "rural" or "urban". Location: ${business.location}`,
         maxOutputTokens: 10,
       });
@@ -128,8 +126,7 @@ async function runTask(
       const html = await safelyFetchUrl(business.website);
       if (!html) return;
       const { text } = await generateText({
-        model: gateway(MODEL_ID),
-        prompt: `Extract from this business website HTML the following fields in JSON: description (string), openingHours (string), phone (string), address (string), city (string), country (string). Only output valid JSON, no markdown.
+          model: getGateway()(MODEL_ID),
 
 HTML:
 ${html.slice(0, 15000)}`,
@@ -159,7 +156,7 @@ ${html.slice(0, 15000)}`,
     case "fetch_google": {
       if (!sl.google) return;
 
-      const serpApiKey = process.env.SERPAPI_API_KEY;
+      const serpApiKey = getSerpApiKey();
       if (!serpApiKey) throw new Error("SERPAPI_API_KEY is not configured");
 
       // Resolve short URLs (maps.app.goo.gl) to the full URL to extract the data_id
@@ -319,7 +316,7 @@ ${html.slice(0, 15000)}`,
       if (!html) return;
 
       const { text } = await generateText({
-        model: gateway(MODEL_ID),
+        model: getGateway()(MODEL_ID),
         prompt: `Extract up to 20 customer reviews from this HTML. Output a JSON array with objects: { rating: number (1-5), reviewerName: string, text: string, title?: string, reviewDate: string (ISO date) }. Only output valid JSON array, no markdown.
 
 HTML:
@@ -372,7 +369,7 @@ ${html.slice(0, 15000)}`,
       // Non-restaurants: keep AI-generated product list.
       if (business.type !== "restaurant") {
         const { text } = await generateText({
-          model: gateway(MODEL_ID),
+          model: getGateway()(MODEL_ID),
           prompt: `You are helping set up a ${business.type} called "${business.name}".
 ${business.description ? `Description: ${business.description}` : ""}
 ${business.cuisineTypes?.length ? `Cuisine: ${business.cuisineTypes.join(", ")}` : ""}
@@ -420,7 +417,7 @@ Generate a realistic list of 8-15 products/menu items for this business. Output 
       async function extractMenuFromHtml(html: string): Promise<MenuItem[]> {
         if (!html) return [];
         const { text: raw } = await generateText({
-          model: gateway(MODEL_ID),
+          model: getGateway()(MODEL_ID),
           prompt: `You are a strict data extractor. Look at the HTML below and extract ONLY menu items that are EXPLICITLY listed in the HTML text — dish names, food/drink items, prices, descriptions that are literally present in the page content.
 
 DO NOT invent, guess, or infer any items. DO NOT use your knowledge of what a restaurant might serve. If the page contains no actual menu items in its text, return an empty array [].
@@ -443,7 +440,7 @@ ${html.slice(0, 18000)}`,
       async function extractMenuFromImage(imageBytes: Uint8Array): Promise<MenuItem[]> {
         try {
           const { text: raw } = await generateText({
-            model: gateway("anthropic/claude-sonnet-4-5"),
+            model: getGateway()("anthropic/claude-sonnet-4-5"),
             messages: [
               {
                 role: "user",

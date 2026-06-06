@@ -4,12 +4,8 @@ import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { createGatewayProvider } from "@ai-sdk/gateway";
+import { getAiGateway } from "./ai/env";
 import { generateText } from "ai";
-
-const gateway = createGatewayProvider({
-  apiKey: process.env.AI_GATEWAY_API_KEY,
-});
 
 export const regenerate = action({
   args: {
@@ -37,6 +33,7 @@ export const calculatePositivityForBusiness = internalAction({
     args: { businessId: Id<"businesses">; model?: string },
   ): Promise<void> => {
     const modelId = args.model ?? "google/gemma-4-31b-it";
+    const gateway = getAiGateway();
 
     const businessWithMetrics = (await ctx.runQuery(
       internal.businesses.getByIdInternal,
