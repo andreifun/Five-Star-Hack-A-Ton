@@ -65,7 +65,6 @@ export const calculatePositivityForBusiness = internalAction({
     args: { businessId: Id<"businesses">; model?: string },
   ): Promise<void> => {
     const modelId = args.model ?? "google/gemma-4-31b-it";
-    const gateway = getAiGateway();
 
     const businessWithMetrics = (await ctx.runQuery(
       internal.businesses.getByIdInternal,
