@@ -11,12 +11,10 @@ const TASK_DEFINITIONS: Array<{
   { type: "classify_location", label: "Classifying location", order: 0 },
   { type: "fetch_website", label: "Scanning your website", order: 1 },
   { type: "fetch_google", label: "Importing Google profile", order: 2 },
-  { type: "fetch_tripadvisor", label: "Importing TripAdvisor reviews", order: 3 },
-  { type: "fetch_booking", label: "Importing Booking.com reviews", order: 4 },
-  { type: "fetch_yelp", label: "Importing Yelp reviews", order: 5 },
-  { type: "discover_products", label: "Discovering products & menu", order: 6 },
-  { type: "generate_tips", label: "Generating improvement tips", order: 7 },
-  { type: "finalize", label: "Finalizing setup", order: 8 },
+  { type: "fetch_booking", label: "Importing Booking.com reviews", order: 3 },
+  { type: "discover_products", label: "Discovering products & menu", order: 4 },
+  { type: "generate_tips", label: "Generating improvement tips", order: 5 },
+  { type: "finalize", label: "Finalizing setup", order: 6 },
 ];
 
 export const createForBusiness = internalMutation({
@@ -25,9 +23,7 @@ export const createForBusiness = internalMutation({
     hasLocation: v.boolean(),
     hasWebsite: v.boolean(),
     hasGoogle: v.boolean(),
-    hasTripadvisor: v.boolean(),
     hasBooking: v.boolean(),
-    hasYelp: v.boolean(),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -35,9 +31,7 @@ export const createForBusiness = internalMutation({
       classify_location: args.hasLocation,
       fetch_website: args.hasWebsite,
       fetch_google: args.hasGoogle,
-      fetch_tripadvisor: args.hasTripadvisor,
       fetch_booking: args.hasBooking,
-      fetch_yelp: args.hasYelp,
     };
 
     for (const def of TASK_DEFINITIONS) {
