@@ -89,6 +89,7 @@ export default defineSchema({
       ),
     ),
     sentimentScore: v.optional(v.number()),
+    isAngry: v.optional(v.boolean()),
     topics: v.optional(v.array(v.string())),
     ownerReply: v.optional(v.string()),
     isPublic: v.boolean(),

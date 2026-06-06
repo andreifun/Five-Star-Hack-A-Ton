@@ -71,17 +71,32 @@ Using all of the following signals together:
 Calculate:
 1. A single overall POSITIVITY SCORE for this business (−10 to 10)
 2. An individual POSITIVITY SCORE for each review (−10 to 10), in the same order as the input list
+3. An individual ANGER FLAG for each review (true/false), in the same order as the input list
 
-Scale:
+Scale for positivity scores:
 - −10 = extremely negative
 - 0 = completely neutral or mixed
 - +10 = extremely positive
+
+For the anger flag, classify whether the review tone is primarily angry/venting (true) vs. constructive criticism or genuine feedback (false). This is a nuanced distinction — use these signals:
+
+Angry = true:
+- Excessive caps, exclamation marks, or emotional outbursts
+- Personal attacks or insults toward staff
+- Hyperbolic language with no specific actionable complaint ("WORST PLACE EVER", "DISGUSTING")
+- Tone of wanting to punish rather than improve
+
+Constructive = false:
+- Specific, describable issues even if strongly worded ("the AC was broken for 3 hours")
+- Suggestions for improvement
+- Balanced tone even if the rating is 1 star
+- Strong but calm language
 
 Reviews:
 ${reviewsText}
 
 Respond ONLY with a valid JSON object in this exact format, no markdown, no explanation:
-{"score": <overall score, one decimal allowed>, "reviewScores": [<score for review 0>, <score for review 1>, ...]}`;
+{"score": <overall score, one decimal allowed>, "reviewScores": [<score for review 0>, <score for review 1>, ...], "angerFlags": [<true/false for review 0>, <true/false for review 1>, ...]}`;
 
     const { text: rawText } = await generateText({
       model: gateway(modelId),
@@ -91,13 +106,16 @@ Respond ONLY with a valid JSON object in this exact format, no markdown, no expl
 
     let score: number;
     let reviewScores: number[] = [];
+    let angerFlags: boolean[] = [];
     try {
       const parsed = JSON.parse(rawText.trim()) as {
         score: number;
         reviewScores: number[];
+        angerFlags?: boolean[];
       };
       score = parsed.score;
       reviewScores = Array.isArray(parsed.reviewScores) ? parsed.reviewScores : [];
+      angerFlags = Array.isArray(parsed.angerFlags) ? parsed.angerFlags : [];
     } catch {
       const match = rawText.match(/-?\d+(\.\d+)?/);
       if (!match) {
@@ -124,6 +142,19 @@ Respond ONLY with a valid JSON object in this exact format, no markdown, no expl
 
       await ctx.runMutation(internal.reviews.setReviewPositivityScores, {
         entries: reviewScoreEntries,
+      });
+    }
+
+    if (angerFlags.length > 0) {
+      const angerEntries = angerFlags
+        .slice(0, reviews.length)
+        .map((isAngry, i) => ({
+          reviewId: reviews[i]!._id,
+          isAngry: Boolean(isAngry),
+        }));
+
+      await ctx.runMutation(internal.reviews.setReviewAngerFlags, {
+        entries: angerEntries,
       });
     }
   },
