@@ -46,6 +46,23 @@ export const create = mutation({
   },
 });
 
+export const deleteByBusinessAndSource = internalMutation({
+  args: {
+    businessId: v.id("businesses"),
+    source: sourceValidator,
+  },
+  handler: async (ctx, args) => {
+    const reviews = await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .filter((q) => q.eq(q.field("source"), args.source))
+      .collect();
+    for (const r of reviews) {
+      await ctx.db.delete(r._id);
+    }
+  },
+});
+
 export const bulkImportInternal = internalMutation({
   args: {
     businessId: v.id("businesses"),

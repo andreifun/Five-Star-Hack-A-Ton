@@ -212,6 +212,10 @@ ${html.slice(0, 15000)}`,
         isFirstPage = false;
       } while (nextPageToken);
 
+      await ctx.runMutation(internal.reviews.deleteByBusinessAndSource, {
+        businessId: business._id,
+        source: "google",
+      });
       await ctx.runMutation(internal.reviews.bulkImportInternal, {
         businessId: business._id,
         reviews: allReviews.map((r) => ({ ...r, source: "google" as const, isPublic: true as const })),
@@ -269,6 +273,10 @@ ${html.slice(0, 15000)}`,
           isPublic: true as const,
         }));
 
+        await ctx.runMutation(internal.reviews.deleteByBusinessAndSource, {
+          businessId: business._id,
+          source,
+        });
         await ctx.runMutation(internal.reviews.bulkImportInternal, {
           businessId: business._id,
           reviews: importReviews,
