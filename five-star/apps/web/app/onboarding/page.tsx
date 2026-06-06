@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { useMutation, useQuery, useAction } from "convex/react"
+import { useMutation, useQuery } from "convex/react"
 import { UserButton } from "@clerk/nextjs"
 import { api } from "@/convex/_generated/api"
 import { AuthGate } from "@/components/auth-gate"
@@ -56,7 +56,6 @@ interface FormState {
 function OnboardingForm() {
   const router = useRouter()
   const createBusiness = useMutation(api.businesses.create)
-  const searchPlaces = useAction(api.placesSearch.searchPlaces)
   const businesses = useQuery(api.businesses.listAllByCurrentUser)
   const hasBusinesses = (businesses?.length ?? 0) > 0
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -94,7 +93,8 @@ function OnboardingForm() {
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true)
       try {
-        const results = await searchPlaces({ query: form.name.trim() })
+        const resp = await fetch(`/api/places?q=${encodeURIComponent(form.name.trim())}`)
+        const results: PlaceSuggestion[] = resp.ok ? await resp.json() : []
         setSuggestions(results)
         setShowSuggestions(results.length > 0)
       } catch {
