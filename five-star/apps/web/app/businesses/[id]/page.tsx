@@ -590,6 +590,8 @@ export default function DashboardPage() {
           </DialogHeader>
           {products.results.length === 0 ? (
             <p className="text-sm text-muted-foreground">No products found.</p>
+          ) : products.results.length === 1 && products.results[0]?.name === "No items found" ? (
+            <p className="text-sm text-muted-foreground">No items found.</p>
           ) : (
             <div className="space-y-3">
               {products.results.map((product) => (
