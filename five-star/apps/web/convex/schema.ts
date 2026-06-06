@@ -51,6 +51,11 @@ export default defineSchema({
     cuisineTypes: v.optional(v.array(v.string())),
     starRating: v.optional(v.number()),
     capacity: v.optional(v.number()),
+    numberOfEmployees: v.optional(v.number()),
+    turnover: v.optional(v.number()),
+    location: v.optional(v.string()),
+    locationType: v.optional(v.union(v.literal("rural"), v.literal("urban"))),
+    seasonality: v.optional(v.union(v.literal("all_year"), v.literal("seasonal"))),
     isActive: v.boolean(),
   })
     .index("by_ownerId", ["ownerId"])
@@ -205,6 +210,7 @@ export default defineSchema({
   setupTasks: defineTable({
     businessId: v.id("businesses"),
     type: v.union(
+      v.literal("classify_location"),
       v.literal("fetch_website"),
       v.literal("fetch_google"),
       v.literal("fetch_tripadvisor"),

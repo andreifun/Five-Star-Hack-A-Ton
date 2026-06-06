@@ -56,6 +56,7 @@ export const run = internalAction({
     if (existingTasks.length === 0) {
       await ctx.runMutation(internal.setupTasks.createForBusiness, {
         businessId: args.businessId,
+        hasLocation: !!business.location,
         hasWebsite: !!business.website,
         hasGoogle: !!sl.google,
         hasTripadvisor: !!sl.tripadvisor,
@@ -104,6 +105,21 @@ async function runTask(
   const sl = business.socialLinks ?? {};
 
   switch (task.type) {
+    case "classify_location": {
+      if (!business.location) return;
+      const { text } = await generateText({
+        model: gateway(MODEL_ID),
+        prompt: `Is the following location rural or urban? Reply with exactly one word: "rural" or "urban". Location: ${business.location}`,
+        maxOutputTokens: 10,
+      });
+      const locationType = text.trim().toLowerCase().startsWith("rural") ? "rural" : "urban";
+      await ctx.runMutation(internal.businesses.updateInternal, {
+        businessId: business._id,
+        locationType,
+      });
+      break;
+    }
+
     case "fetch_website": {
       if (!business.website) return;
       const html = await safelyFetchUrl(business.website);
