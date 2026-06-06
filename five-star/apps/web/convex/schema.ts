@@ -94,6 +94,7 @@ export default defineSchema({
     .index("by_businessId_and_sentiment", ["businessId", "sentiment"])
     .index("by_businessId_and_hasText", ["businessId", "hasText"])
     .index("by_businessId_and_hasText_and_reviewDate", ["businessId", "hasText", "reviewDate"])
+    .index("by_businessId_and_externalId", ["businessId", "externalId"])
     .index("by_businessId_and_source_and_hasText_and_reviewDate", ["businessId", "source", "hasText", "reviewDate"])
     .index("by_businessId_and_sentiment_and_hasText_and_reviewDate", ["businessId", "sentiment", "hasText", "reviewDate"])
     .searchIndex("search_text", {
