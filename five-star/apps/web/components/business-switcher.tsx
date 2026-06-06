@@ -22,7 +22,10 @@ export function BusinessSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="gap-1.5 font-semibold">
+        <Button
+          variant="ghost"
+          className="m-1 gap-1.5 border border-foreground/20 bg-foreground/10 font-semibold hover:bg-foreground/15 focus-visible:ring-0 focus-visible:border-foreground/20"
+        >
           {business?.name ?? "…"}
           <ChevronDown className="size-3.5 opacity-60" />
         </Button>

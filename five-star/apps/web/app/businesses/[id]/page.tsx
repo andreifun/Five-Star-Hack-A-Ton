@@ -15,6 +15,7 @@ import { useCurrentBusiness } from "@/components/business-context"
 import { StarRating } from "@/components/star-rating"
 import { ReviewCard } from "@/components/review-card"
 import { TipCard } from "@/components/tip-card"
+import { FeatureCard } from "@/components/feature-card"
 import { Card, CardContent } from "@workspace/ui/components/card"
 import { Badge } from "@workspace/ui/components/badge"
 import { Progress } from "@workspace/ui/components/progress"
@@ -290,6 +291,11 @@ export default function DashboardPage() {
                 Refresh
               </Button>
             )}
+          </div>
+          <div className="mb-2">
+            <FeatureCard icon={<Lightbulb className="size-4" />} title="AI-powered insights">
+              Actionable tips from your reviews
+            </FeatureCard>
           </div>
           <motion.div
             className="grid grid-cols-2 gap-2 lg:grid-cols-4"
