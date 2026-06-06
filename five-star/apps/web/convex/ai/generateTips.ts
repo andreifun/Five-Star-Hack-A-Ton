@@ -29,6 +29,49 @@ interface GeneratedTip {
   sourceReviewIndices: number[];
 }
 
+function buildTemporalTrends(reviews: Doc<"reviews">[], today: Date): string {
+  const nowMs = today.getTime();
+  const DAY = 24 * 60 * 60 * 1000;
+  const recentCutoff = nowMs - 60 * DAY;  // last 60 days
+  const priorCutoff  = nowMs - 150 * DAY; // 60–150 days ago (prior 90-day window)
+
+  const countTopics = (rs: Doc<"reviews">[]): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const r of rs) {
+      if (r.sentiment === "positive") continue;
+      for (const t of r.topics ?? []) {
+        counts[t] = (counts[t] ?? 0) + 1;
+      }
+    }
+    return counts;
+  };
+
+  const recentReviews = reviews.filter((r) => r.reviewDate >= recentCutoff);
+  const priorReviews  = reviews.filter((r) => r.reviewDate >= priorCutoff && r.reviewDate < recentCutoff);
+
+  const recentCounts = countTopics(recentReviews);
+  const priorCounts  = countTopics(priorReviews);
+  const priorFactor  = 60 / 90; // normalise prior 90-day window to 60 days
+
+  const monthLabel = today.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+  const spikes: string[] = [];
+  for (const [topic, recentN] of Object.entries(recentCounts)) {
+    if (recentN < 2) continue; // require at least 2 recent complaints to avoid noise
+    const priorNormalised = (priorCounts[topic] ?? 0) * priorFactor;
+    if (recentN >= priorNormalised * 2 + 1) { // 2× spike, or brand-new topic
+      spikes.push(
+        `'${topic}' appeared in ${recentN} negative/neutral reviews in the last 60 days` +
+        ` (vs ~${priorNormalised.toFixed(1)} in the prior period) — spike around ${monthLabel}`,
+      );
+    }
+  }
+
+  return spikes.length > 0
+    ? `Temporal trend alerts (auto-detected from review dates):\n${spikes.map((s) => `- ${s}`).join("\n")}`
+    : "";
+}
+
 /**
  * Public, ownership-checked entry point for regenerating tips from the UI.
  * Verifies the caller owns the business (via the auth-gated `getById`, whose
@@ -84,6 +127,10 @@ export const generateTipsForBusiness = internalAction({
       { businessId: args.businessId, status: "pending", limit: 20 },
     )) as Doc<"tips">[];
 
+    const today = new Date();
+    const temporalTrends = buildTemporalTrends(reviews, today);
+    const todayLabel = today.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
     const businessContext = `
 Business: ${businessWithMetrics.name}
 Type: ${businessWithMetrics.type}
@@ -102,13 +149,13 @@ Metrics:
 `.trim();
 
     const reviewsText = reviews
-      .map(
-        (r: Doc<"reviews">, i: number) =>
-          `[${i}] Rating: ${r.rating}/5 | Source: ${r.source} | Sentiment: ${r.sentiment ?? "unknown"}
+      .map((r: Doc<"reviews">, i: number) => {
+        const dateStr = new Date(r.reviewDate).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        return `[${i}] Rating: ${r.rating}/5 | Source: ${r.source} | Sentiment: ${r.sentiment ?? "unknown"} | Date: ${dateStr}
 ${r.title ? `Title: ${r.title}` : ""}
 ${r.text ? `Review: ${r.text}` : "(no text)"}
-${r.topics?.length ? `Topics: ${r.topics.join(", ")}` : ""}`,
-      )
+${r.topics?.length ? `Topics: ${r.topics.join(", ")}` : ""}`;
+      })
       .join("\n\n");
 
     const pendingTitles = pendingTips.map((t: Doc<"tips">) => t.title).join(", ");
@@ -117,6 +164,8 @@ ${r.topics?.length ? `Topics: ${r.topics.join(", ")}` : ""}`,
 
 ${businessContext}
 
+Today's date: ${todayLabel}
+${temporalTrends ? `\n${temporalTrends}\n` : ""}
 Recent customer reviews (up to 50):
 ${reviewsText || "No reviews yet."}
 
@@ -127,6 +176,7 @@ Based on the reviews and business context, generate 3-7 specific, actionable imp
 - Reference specific patterns from reviews where relevant
 - Be realistic for this type of business
 - Not duplicate any already-pending tips listed above
+- If temporal trends are listed above, prioritise addressing those spikes and mention the time context in the tip content (e.g. "AC complaints have spiked this month")
 
 Respond with a JSON array of tips with this exact structure:
 [
