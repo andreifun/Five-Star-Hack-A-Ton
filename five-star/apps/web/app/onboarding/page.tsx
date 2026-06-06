@@ -84,6 +84,7 @@ function OnboardingForm() {
   const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [isScraping, setIsScraping] = useState(false)
+  const [scrapeResult, setScrapeResult] = useState<{ websiteUrl: string | null; menuPages: string[]; menuImages: string[]; menuPDFs: string[] } | null>(null)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [noResults, setNoResults] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -127,11 +128,12 @@ function OnboardingForm() {
     setSuggestions([])
     setShowSuggestions(false)
     setNoResults(false)
+    setScrapeResult(null)
 
     setIsScraping(true)
     try {
       const result = await scrapeMenuFromUrl({ mapsUrl: place.mapsUrl, dataId: place.dataId })
-      console.log("Scrape result:", result)
+      setScrapeResult(result)
     } catch (err) {
       console.warn("Background scrape failed:", err)
     } finally {
@@ -145,6 +147,7 @@ function OnboardingForm() {
     setSuggestions([])
     setShowSuggestions(false)
     setNoResults(false)
+    setScrapeResult(null)
   }
 
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -160,6 +163,7 @@ function OnboardingForm() {
         name: form.name,
         type: form.type as BusinessType,
         description: form.description || undefined,
+        website: scrapeResult?.websiteUrl ?? undefined,
         socialLinks: form.google ? { google: form.google } : undefined,
       })
       router.push(`/businesses/${id}/setup`)

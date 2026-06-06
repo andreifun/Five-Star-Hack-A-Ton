@@ -299,6 +299,51 @@ ${html.slice(0, 15000)}`,
       break;
     }
 
+    case "discover_products": {
+      const websiteUrl = business.mapsWebsite ?? business.website;
+      if (!websiteUrl) return;
+
+      const html = await safelyFetchUrl(websiteUrl);
+      if (!html) return;
+
+      const { text } = await generateText({
+        model: gateway(MODEL_ID),
+        prompt: `Extract menu items or products from this business website HTML.
+Output a JSON array with objects: { name: string, description?: string, category?: string, price?: number }.
+Only output valid JSON array, no markdown. If nothing is found, output [].
+
+HTML:
+${html.slice(0, 15000)}`,
+        maxOutputTokens: 2048,
+      });
+
+      try {
+        const items = JSON.parse(text) as Array<{
+          name: string;
+          description?: string;
+          category?: string;
+          price?: number;
+        }>;
+        if (!Array.isArray(items) || items.length === 0) return;
+
+        for (const item of items.slice(0, 50)) {
+          if (!item.name) continue;
+          await ctx.runMutation(internal.products.createInternal, {
+            businessId: business._id,
+            name: item.name,
+            description: item.description,
+            category: item.category,
+            price: item.price,
+            isAvailable: true,
+            isSignatureDish: false,
+          });
+        }
+      } catch {
+        // Unparseable — skip quietly
+      }
+      break;
+    }
+
     case "fetch_tripadvisor":
     case "fetch_booking":
     case "fetch_yelp": {
