@@ -28,6 +28,7 @@ export default defineSchema({
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     website: v.optional(v.string()),
+    mapsWebsite: v.optional(v.string()),
     phone: v.optional(v.string()),
     socialLinks: v.optional(
       v.object({
