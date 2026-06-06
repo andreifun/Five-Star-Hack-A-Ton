@@ -35,6 +35,10 @@ export const create = mutation({
     cuisineTypes: v.optional(v.array(v.string())),
     starRating: v.optional(v.number()),
     capacity: v.optional(v.number()),
+    numberOfEmployees: v.optional(v.number()),
+    turnover: v.optional(v.number()),
+    location: v.optional(v.string()),
+    seasonality: v.optional(v.union(v.literal("all_year"), v.literal("seasonal"))),
     socialLinks: v.optional(
       v.object({
         instagram: v.optional(v.string()),
@@ -66,6 +70,10 @@ export const create = mutation({
       cuisineTypes: args.cuisineTypes,
       starRating: args.starRating,
       capacity: args.capacity,
+      numberOfEmployees: args.numberOfEmployees,
+      turnover: args.turnover,
+      location: args.location,
+      seasonality: args.seasonality,
       socialLinks: args.socialLinks,
       isActive: true,
     });
@@ -184,6 +192,7 @@ export const updateInternal = internalMutation({
     country: v.optional(v.string()),
     phone: v.optional(v.string()),
     openingHours: v.optional(v.string()),
+    locationType: v.optional(v.union(v.literal("rural"), v.literal("urban"))),
   },
   handler: async (ctx, args) => {
     const { businessId, ...fields } = args;
