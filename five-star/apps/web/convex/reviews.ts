@@ -46,6 +46,25 @@ export const create = mutation({
   },
 });
 
+export const deleteByBusinessAndSource = internalMutation({
+  args: {
+    businessId: v.id("businesses"),
+    source: sourceValidator,
+  },
+  handler: async (ctx, args): Promise<boolean> => {
+    const batch = await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId_and_source", (q) =>
+        q.eq("businessId", args.businessId).eq("source", args.source)
+      )
+      .take(100);
+    for (const r of batch) {
+      await ctx.db.delete(r._id);
+    }
+    return batch.length === 100;
+  },
+});
+
 export const bulkImportInternal = internalMutation({
   args: {
     businessId: v.id("businesses"),

@@ -4,7 +4,6 @@ import { StarRating } from "@/components/star-rating"
 import {
   SOURCE_LABELS,
   SENTIMENT_BADGE,
-  formatAbsoluteDate,
   formatRelativeDate,
   getRecencyLevel,
 } from "@/lib/format"
@@ -38,10 +37,7 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StarRating value={review.rating} />
             <span className="text-xs text-muted-foreground">
-              {formatAbsoluteDate(review.reviewDate)}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              · {formatRelativeDate(review.reviewDate)}
+              {formatRelativeDate(review.reviewDate)}
             </span>
             {recency !== "older" && (
               <span
