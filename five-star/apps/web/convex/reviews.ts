@@ -132,8 +132,10 @@ export const deduplicateExisting = internalMutation({
       .take(1000);
     const seen = new Set<string>();
     for (const r of reviews) {
-      if (!r.externalId) continue;
-      const key = `${r.source}:${r.externalId}`;
+      // Use externalId if present, otherwise derive a key from content fields
+      const key = r.externalId
+        ? `${r.source}:${r.externalId}`
+        : `${r.source}|${r.reviewerName ?? ""}|${r.reviewDate}|${r.rating}|${r.text ?? ""}|${r.title ?? ""}`;
       if (seen.has(key)) {
         await ctx.db.delete(r._id);
       } else {
