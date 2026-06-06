@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { useMutation, useQuery } from "convex/react"
+import { useMutation, useQuery, useAction } from "convex/react"
 import { UserButton } from "@clerk/nextjs"
 import { api } from "@/convex/_generated/api"
 import { AuthGate } from "@/components/auth-gate"
@@ -56,6 +56,7 @@ interface FormState {
 function OnboardingForm() {
   const router = useRouter()
   const createBusiness = useMutation(api.businesses.create)
+  const searchPlaces = useAction(api.placesSearch.searchPlaces)
   const businesses = useQuery(api.businesses.listAllByCurrentUser)
   const hasBusinesses = (businesses?.length ?? 0) > 0
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -73,6 +74,55 @@ function OnboardingForm() {
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  type PlaceSuggestion = { name: string; address: string; mapsUrl: string }
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([])
+  const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (selectedPlace) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (form.name.trim().length < 3) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true)
+      try {
+        const results = await searchPlaces({ query: form.name.trim() })
+        setSuggestions(results)
+        setShowSuggestions(results.length > 0)
+      } catch {
+        setSuggestions([])
+        setShowSuggestions(false)
+      } finally {
+        setIsSearching(false)
+      }
+    }, 600)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [form.name, selectedPlace])
+
+  function handlePlaceSelect(place: PlaceSuggestion) {
+    console.log("Selected place:", place)
+    setSelectedPlace(place)
+    set("name", place.name)
+    set("google", place.mapsUrl)
+    setSuggestions([])
+    setShowSuggestions(false)
+  }
+
+  function handleClearPlace() {
+    setSelectedPlace(null)
+    set("google", "")
+    setSuggestions([])
+    setShowSuggestions(false)
   }
 
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -130,12 +180,65 @@ function OnboardingForm() {
             <CardContent className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="name">Business name *</Label>
-                <Input
-                  id="name"
-                  value={form.name}
-                  onChange={(e) => set("name", e.target.value)}
-                  placeholder="e.g. The Golden Fork"
-                />
+                <div className="relative">
+                  <Input
+                    id="name"
+                    value={form.name}
+                    onChange={(e) => {
+                      if (selectedPlace && e.target.value !== selectedPlace.name) {
+                        setSelectedPlace(null)
+                        set("google", "")
+                      }
+                      set("name", e.target.value)
+                    }}
+                    onFocus={() => {
+                      if (suggestions.length > 0 && !selectedPlace) setShowSuggestions(true)
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => setShowSuggestions(false), 150)
+                    }}
+                    placeholder="e.g. The Golden Fork"
+                    autoComplete="off"
+                  />
+                  {isSearching && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      Searching…
+                    </span>
+                  )}
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md">
+                      {suggestions.map((place, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handlePlaceSelect(place)}
+                          className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground first:rounded-t-md last:rounded-b-md"
+                        >
+                          <span className="font-medium">{place.name}</span>
+                          {place.address && (
+                            <span className="text-xs text-muted-foreground">{place.address}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {selectedPlace && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="inline-flex items-center gap-1 rounded-full border bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                      <span>📍 {selectedPlace.name}</span>
+                      <button
+                        type="button"
+                        onClick={handleClearPlace}
+                        className="ml-1 rounded-full hover:text-destructive"
+                        aria-label="Clear selection"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Business type *</Label>
@@ -162,16 +265,18 @@ function OnboardingForm() {
                   rows={3}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="google">Google Maps URL</Label>
-                <Input
-                  id="google"
-                  type="url"
-                  value={form.google}
-                  onChange={(e) => set("google", e.target.value)}
-                  placeholder="https://maps.google.com/…"
-                />
-              </div>
+              {!selectedPlace && (
+                <div className="space-y-2">
+                  <Label htmlFor="google">Google Maps URL</Label>
+                  <Input
+                    id="google"
+                    type="url"
+                    value={form.google}
+                    onChange={(e) => set("google", e.target.value)}
+                    placeholder="https://maps.google.com/…"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="numberOfEmployees">Number of employees</Label>
                 <Input
