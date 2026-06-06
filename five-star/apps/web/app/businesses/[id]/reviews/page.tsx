@@ -53,9 +53,15 @@ export default function ReviewsPage() {
   const [source, setSource] = useState<Source | undefined>()
   const [sentiment, setSentiment] = useState<Sentiment | undefined>()
 
-  const { results, status, loadMore } = usePaginatedQuery(
+  const complex = usePaginatedQuery(
     api.reviews.listByBusiness,
-    { businessId, source, sentiment },
+    { businessId, source, sentiment, hasText: true },
+    { initialNumItems: 20 },
+  )
+
+  const simple = usePaginatedQuery(
+    api.reviews.listByBusiness,
+    { businessId, source, sentiment, hasText: false },
     { initialNumItems: 20 },
   )
 
@@ -98,37 +104,39 @@ export default function ReviewsPage() {
           </div>
         </div>
 
-        {status === "LoadingFirstPage" ? (
+        {complex.status === "LoadingFirstPage" || simple.status === "LoadingFirstPage" ? (
           <div className="flex justify-center py-12">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
-        ) : results.length === 0 ? (
+        ) : complex.results.length === 0 && simple.results.length === 0 ? (
           <p className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
             No reviews match these filters.
           </p>
         ) : (
           <div className="space-y-3">
-            {results
-              .sort((a, b) => {
-                const aHasText = !!a.text
-                const bHasText = !!b.text
-                if (aHasText === bHasText) return 0
-                return aHasText ? -1 : 1
-              })
-              .map((review) => (
-                <ReviewCard key={review._id} review={review} />
-              ))}
+            {[...complex.results, ...simple.results].map((review) => (
+              <ReviewCard key={review._id} review={review} />
+            ))}
           </div>
         )}
 
-        {status === "CanLoadMore" && (
+        {(complex.status === "CanLoadMore" || simple.status === "CanLoadMore") && (
           <div className="flex justify-center">
-            <Button variant="outline" onClick={() => loadMore(20)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (complex.status === "CanLoadMore") {
+                  complex.loadMore(20)
+                } else {
+                  simple.loadMore(20)
+                }
+              }}
+            >
               Load more
             </Button>
           </div>
         )}
-        {status === "LoadingMore" && (
+        {(complex.status === "LoadingMore" || simple.status === "LoadingMore") && (
           <div className="flex justify-center py-2">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>

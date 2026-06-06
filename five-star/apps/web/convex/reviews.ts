@@ -38,7 +38,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireBusinessOwner(ctx, args.businessId);
-    const reviewId = await ctx.db.insert("reviews", args);
+    const reviewId = await ctx.db.insert("reviews", { ...args, hasText: !!args.text });
     await ctx.scheduler.runAfter(0, internal.businessMetrics.recompute, {
       businessId: args.businessId,
     });
@@ -69,6 +69,7 @@ export const bulkImportInternal = internalMutation({
       await ctx.db.insert("reviews", {
         businessId: args.businessId,
         ...review,
+        hasText: !!review.text,
       });
     }
 
@@ -133,6 +134,7 @@ export const bulkImport = mutation({
       await ctx.db.insert("reviews", {
         businessId: args.businessId,
         ...review,
+        hasText: !!review.text,
       });
       imported++;
     }
@@ -195,6 +197,7 @@ export const listByBusiness = query({
     paginationOpts: paginationOptsValidator,
     source: v.optional(sourceValidator),
     sentiment: v.optional(sentimentValidator),
+    hasText: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireBusinessOwner(ctx, args.businessId);
@@ -204,6 +207,11 @@ export const listByBusiness = query({
         .withIndex("by_businessId_and_source", (q) =>
           q.eq("businessId", args.businessId).eq("source", args.source!),
         )
+        .filter((q) =>
+          args.hasText !== undefined
+            ? q.eq(q.field("hasText"), args.hasText)
+            : true,
+        )
         .order("desc")
         .paginate(args.paginationOpts);
     }
@@ -212,6 +220,20 @@ export const listByBusiness = query({
         .query("reviews")
         .withIndex("by_businessId_and_sentiment", (q) =>
           q.eq("businessId", args.businessId).eq("sentiment", args.sentiment!),
+        )
+        .filter((q) =>
+          args.hasText !== undefined
+            ? q.eq(q.field("hasText"), args.hasText)
+            : true,
+        )
+        .order("desc")
+        .paginate(args.paginationOpts);
+    }
+    if (args.hasText !== undefined) {
+      return await ctx.db
+        .query("reviews")
+        .withIndex("by_businessId_and_hasText", (q) =>
+          q.eq("businessId", args.businessId).eq("hasText", args.hasText!),
         )
         .order("desc")
         .paginate(args.paginationOpts);
@@ -252,5 +274,24 @@ export const remove = mutation({
     await ctx.scheduler.runAfter(0, internal.businessMetrics.recompute, {
       businessId: review.businessId,
     });
+  },
+});
+
+export const backfillHasText = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db
+      .query("reviews")
+      .paginate({ cursor: args.cursor ?? null, numItems: 100 });
+    for (const review of batch.page) {
+      if (review.hasText === undefined) {
+        await ctx.db.patch(review._id, { hasText: !!review.text });
+      }
+    }
+    if (!batch.isDone) {
+      await ctx.scheduler.runAfter(0, internal.reviews.backfillHasText, {
+        cursor: batch.continueCursor,
+      });
+    }
   },
 });

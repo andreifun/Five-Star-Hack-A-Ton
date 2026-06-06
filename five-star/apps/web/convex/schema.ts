@@ -70,6 +70,7 @@ export default defineSchema({
     rating: v.number(),
     title: v.optional(v.string()),
     text: v.optional(v.string()),
+    hasText: v.optional(v.boolean()),
     reviewerName: v.optional(v.string()),
     reviewerAvatarUrl: v.optional(v.string()),
     reviewDate: v.number(),
@@ -91,6 +92,7 @@ export default defineSchema({
     .index("by_businessId_and_reviewDate", ["businessId", "reviewDate"])
     .index("by_businessId_and_rating", ["businessId", "rating"])
     .index("by_businessId_and_sentiment", ["businessId", "sentiment"])
+    .index("by_businessId_and_hasText", ["businessId", "hasText"])
     .searchIndex("search_text", {
       searchField: "text",
       filterFields: ["businessId", "source"],
