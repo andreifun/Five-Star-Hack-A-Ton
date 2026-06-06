@@ -15,6 +15,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@workspace
 import { Separator } from "@workspace/ui/components/separator"
 import { RadioGroup, RadioGroupItem } from "@workspace/ui/components/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select"
+import { MapPin, Loader2, X } from "lucide-react"
 
 const BUSINESS_TYPES = [
   { value: "restaurant", label: "Restaurant" },
@@ -199,44 +200,53 @@ function OnboardingForm() {
                     }}
                     placeholder="e.g. The Golden Fork"
                     autoComplete="off"
+                    className={selectedPlace ? "border-green-500 pr-8 focus-visible:ring-green-500" : ""}
                   />
                   {isSearching && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      Searching…
-                    </span>
+                    <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                  )}
+                  {selectedPlace && !isSearching && (
+                    <button
+                      type="button"
+                      onClick={handleClearPlace}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                      aria-label="Clear selection"
+                    >
+                      <X className="size-3.5" />
+                    </button>
                   )}
                   {showSuggestions && suggestions.length > 0 && (
-                    <div className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md">
+                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border bg-popover shadow-lg">
+                      <p className="border-b px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Google Maps results
+                      </p>
                       {suggestions.map((place, i) => (
                         <button
                           key={i}
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => handlePlaceSelect(place)}
-                          className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground first:rounded-t-md last:rounded-b-md"
+                          className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent"
                         >
-                          <span className="font-medium">{place.name}</span>
-                          {place.address && (
-                            <span className="text-xs text-muted-foreground">{place.address}</span>
-                          )}
+                          <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{place.name}</p>
+                            {place.address && (
+                              <p className="truncate text-xs text-muted-foreground">{place.address}</p>
+                            )}
+                          </div>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
                 {selectedPlace && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="inline-flex items-center gap-1 rounded-full border bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                      <span>📍 {selectedPlace.name}</span>
-                      <button
-                        type="button"
-                        onClick={handleClearPlace}
-                        className="ml-1 rounded-full hover:text-destructive"
-                        aria-label="Clear selection"
-                      >
-                        ✕
-                      </button>
-                    </span>
+                  <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 dark:border-green-900 dark:bg-green-950/30">
+                    <MapPin className="size-4 shrink-0 text-green-600 dark:text-green-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-green-800 dark:text-green-300">{selectedPlace.name}</p>
+                      <p className="truncate text-xs text-green-600 dark:text-green-500">{selectedPlace.address}</p>
+                    </div>
                   </div>
                 )}
               </div>
