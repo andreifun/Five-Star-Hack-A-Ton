@@ -57,7 +57,7 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
       {review.title && (
         <p className="mt-2 text-sm font-medium">{review.title}</p>
       )}
-      {review.text ? (
+      {review.text?.trim() ? (
         <p className="mt-1 text-sm text-muted-foreground">{review.text}</p>
       ) : (
         <p className="mt-1 text-xs italic text-muted-foreground/60">No review text</p>

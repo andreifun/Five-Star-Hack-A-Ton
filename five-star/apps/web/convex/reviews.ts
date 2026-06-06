@@ -38,7 +38,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireBusinessOwner(ctx, args.businessId);
-    const reviewId = await ctx.db.insert("reviews", { ...args, hasText: !!args.text });
+    const reviewId = await ctx.db.insert("reviews", { ...args, hasText: !!args.text?.trim() });
     await ctx.scheduler.runAfter(0, internal.businessMetrics.recompute, {
       businessId: args.businessId,
     });
@@ -69,7 +69,7 @@ export const bulkImportInternal = internalMutation({
       await ctx.db.insert("reviews", {
         businessId: args.businessId,
         ...review,
-        hasText: !!review.text,
+        hasText: !!review.text?.trim(),
       });
     }
 
@@ -134,7 +134,7 @@ export const bulkImport = mutation({
       await ctx.db.insert("reviews", {
         businessId: args.businessId,
         ...review,
-        hasText: !!review.text,
+        hasText: !!review.text?.trim(),
       });
       imported++;
     }
@@ -285,7 +285,7 @@ export const backfillHasText = internalMutation({
       .paginate({ cursor: args.cursor ?? null, numItems: 100 });
     for (const review of batch.page) {
       if (review.hasText === undefined) {
-        await ctx.db.patch(review._id, { hasText: !!review.text });
+        await ctx.db.patch(review._id, { hasText: !!review.text?.trim() });
       }
     }
     if (!batch.isDone) {

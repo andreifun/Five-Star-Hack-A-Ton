@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   usePaginatedQuery,
@@ -167,6 +167,14 @@ export default function DashboardPage() {
     api.tips.listByBusiness,
     { businessId, status: "pending" },
     { initialNumItems: 10 },
+  )
+
+  const sortedRecentReviews = useMemo(
+    () => [
+      ...recentReviews.results.filter((r) => r.hasText),
+      ...recentReviews.results.filter((r) => !r.hasText),
+    ],
+    [recentReviews.results],
   )
 
   // Auto-scroll on new messages
@@ -511,10 +519,7 @@ export default function DashboardPage() {
             <p className="text-sm text-muted-foreground">No reviews imported yet.</p>
           ) : (
             <div className="space-y-3">
-              {[
-                ...recentReviews.results.filter((r) => r.text),
-                ...recentReviews.results.filter((r) => !r.text),
-              ].map((review) => (
+              {sortedRecentReviews.map((review) => (
                 <ReviewCard key={review._id} review={review} />
               ))}
               {recentReviews.status === "CanLoadMore" && (
