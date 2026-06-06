@@ -20,6 +20,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { getSerpApiKey } from "./ai/env";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -79,25 +80,39 @@ async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOpti
   }
   if (!resp.ok) return [];
 
-  const data = (await resp.json()) as {
-    local_results?: Array<{
-      title?: string;
-      address?: string;
-      data_id?: string;
-    }>;
-  };
+  const data = (await resp.json()) as Record<string, unknown>;
+  const localResults = data.local_results as Array<Record<string, unknown>> | undefined;
 
-  return (data.local_results ?? [])
-    .slice(0, 3)
-    .filter((r): r is { title: string; address?: string; data_id: string } =>
-      !!(r.title && r.data_id),
-    )
-    .map((r) => ({
-      name: r.title,
-      address: r.address ?? "",
-      mapsUrl: `https://www.google.com/maps/place/${encodeURIComponent(r.title)}/data=!1s${r.data_id}`,
-      dataId: r.data_id,
-    }));
+  console.log("[getMapsOptions] keys:", Object.keys(data));
+  if (localResults?.length) {
+    console.log("[getMapsOptions] first result:", JSON.stringify(localResults[0]));
+  } else {
+    console.log("[getMapsOptions] no local_results, full response:", JSON.stringify(data).slice(0, 500));
+  }
+
+  return (localResults ?? []).slice(0, 3)
+    .filter((r) => r.title)
+    .map((r) => {
+      const name = String(r.title ?? "");
+      const dataId = String(r.data_id ?? "");
+      const placeId = String(r.place_id ?? "");
+      const reviewsLink = String(r.reviews_link ?? "");
+      const placeIdSearch = String(r.place_id_search ?? "");
+
+      let mapsUrl = "";
+      if (dataId) {
+        mapsUrl = `https://www.google.com/maps/place/${encodeURIComponent(name)}/data=!1s${dataId}`;
+      } else if (placeId) {
+        mapsUrl = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+      } else if (reviewsLink) {
+        mapsUrl = reviewsLink;
+      } else if (placeIdSearch) {
+        mapsUrl = placeIdSearch;
+      }
+
+      return { name, address: String(r.address ?? ""), mapsUrl, dataId };
+    })
+    .filter((r) => r.mapsUrl);
 }
 
 // ─── SerpAPI — place details ──────────────────────────────────────────────────
@@ -271,11 +286,7 @@ export const getMapsOptions = action({
     _ctx,
     args,
   ): Promise<Array<{ name: string; address: string; mapsUrl: string; dataId: string }>> => {
-    const apiKey = process.env.SERPAPI_API_KEY;
-    if (!apiKey) {
-      console.warn("SERPAPI_API_KEY not configured — place search unavailable");
-      return [];
-    }
+    const apiKey = getSerpApiKey(); // throws if not set — surfaces in Convex dashboard logs
     return serpSearchPlaces(args.businessName.trim(), apiKey);
   },
 });
@@ -289,7 +300,7 @@ export const scrapeMenuFromUrl = action({
     dataId: v.optional(v.string()),
   },
   handler: async (_ctx, args): Promise<MenuScrapeResult> => {
-    const apiKey = process.env.SERPAPI_API_KEY;
+    const apiKey = getSerpApiKey();
     if (!apiKey) throw new Error("SERPAPI_API_KEY is not configured.");
 
     // Extract data_id from mapsUrl if not provided directly
