@@ -120,6 +120,7 @@ export default function DashboardPage() {
   const creatingRef = useRef(false)
   const createThread = useMutation(api.chatThreads.create)
   const sendMessage = useAction(api.ai.chat.sendMessage)
+  const calcPositivity = useAction(api.ai.calculatePositivity.regenerate)
 
   // Chat input
   const [input, setInput] = useState("")
@@ -172,6 +173,22 @@ export default function DashboardPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isSending])
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+  }, [input])
+
+  // Auto-calculate positivity score if missing
+  useEffect(() => {
+    const metrics = business?.metrics
+    if (businessId && metrics && metrics.positivityScore === undefined && metrics.reviewCount > 0) {
+      void calcPositivity({ businessId })
+    }
+  }, [businessId, business?.metrics?.positivityScore, business?.metrics?.reviewCount, calcPositivity])
 
   async function handleRefresh() {
     setRefreshing(true)

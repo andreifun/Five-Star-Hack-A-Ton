@@ -17,6 +17,14 @@ const RECENCY_BADGE: Record<
   recent: { label: "Recent", className: "bg-blue-100 text-blue-700 border-blue-200" },
 }
 
+function positivityPillClass(score: number): string {
+  if (score <= -10) return "border-red-900 bg-red-950 text-red-300"
+  if (score < -2) return "border-red-500 bg-red-950/60 text-red-400"
+  if (score <= 2) return "border-border bg-muted text-muted-foreground"
+  if (score >= 10) return "border-green-700 bg-green-950 text-green-400"
+  return "border-blue-500 bg-blue-950/60 text-blue-400"
+}
+
 export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
   const recency = getRecencyLevel(review.reviewDate)
 
@@ -45,6 +53,11 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {review.sentimentScore !== undefined && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums ${positivityPillClass(review.sentimentScore)}`}>
+              {review.sentimentScore >= 0 ? "+" : ""}{review.sentimentScore.toFixed(1)}
+            </span>
+          )}
           {review.sentiment && (
             <Badge variant={SENTIMENT_BADGE[review.sentiment]}>
               {review.sentiment}

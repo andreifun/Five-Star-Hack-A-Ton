@@ -191,6 +191,17 @@ export const listRecentInternal = internalQuery({
   },
 });
 
+export const setReviewPositivityScores = internalMutation({
+  args: {
+    entries: v.array(v.object({ reviewId: v.id("reviews"), score: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    for (const { reviewId, score } of args.entries) {
+      await ctx.db.patch(reviewId, { sentimentScore: score });
+    }
+  },
+});
+
 export const listByBusiness = query({
   args: {
     businessId: v.id("businesses"),
