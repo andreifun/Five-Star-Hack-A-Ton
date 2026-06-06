@@ -52,7 +52,7 @@ export default defineSchema({
     starRating: v.optional(v.number()),
     capacity: v.optional(v.number()),
     numberOfEmployees: v.optional(v.number()),
-    turnover: v.optional(v.number()),
+    turnover: v.optional(v.string()),
     location: v.optional(v.string()),
     locationType: v.optional(v.union(v.literal("rural"), v.literal("urban"))),
     seasonality: v.optional(v.union(v.literal("all_year"), v.literal("seasonal"))),

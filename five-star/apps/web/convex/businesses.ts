@@ -36,7 +36,7 @@ export const create = mutation({
     starRating: v.optional(v.number()),
     capacity: v.optional(v.number()),
     numberOfEmployees: v.optional(v.number()),
-    turnover: v.optional(v.number()),
+    turnover: v.optional(v.string()),
     location: v.optional(v.string()),
     seasonality: v.optional(v.union(v.literal("all_year"), v.literal("seasonal"))),
     socialLinks: v.optional(
