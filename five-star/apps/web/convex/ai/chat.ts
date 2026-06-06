@@ -4,12 +4,8 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal, api } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { createGatewayProvider } from "@ai-sdk/gateway";
+import { getAiGateway } from "./env";
 import { generateText, tool, jsonSchema, stepCountIs } from "ai";
-
-const gateway = createGatewayProvider({
-  apiKey: process.env.AI_GATEWAY_API_KEY,
-});
 
 export const sendMessage = action({
   args: {
@@ -28,6 +24,7 @@ export const sendMessage = action({
     },
   ): Promise<{ content: string; messageId: Id<"chatMessages">; isError: boolean }> => {
     const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
+    const gateway = getAiGateway();
 
     const businessWithMetrics = (await ctx.runQuery(api.businesses.getById, {
       businessId: args.businessId,

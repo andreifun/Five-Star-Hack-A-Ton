@@ -60,6 +60,7 @@ function OnboardingForm() {
   const router = useRouter()
   const createBusiness = useMutation(api.businesses.create)
   const businesses = useQuery(api.businesses.listAllByCurrentUser)
+  const getMapsOptions = useAction(api.scraper.getMapsOptions)
   const scrapeMenuFromUrl = useAction(api.scraper.scrapeMenuFromUrl)
   const hasBusinesses = (businesses?.length ?? 0) > 0
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -103,8 +104,7 @@ function OnboardingForm() {
       setIsSearching(true)
       setNoResults(false)
       try {
-        const resp = await fetch(`/api/places?q=${encodeURIComponent(query)}`)
-        const results: PlaceSuggestion[] = resp.ok ? await resp.json() : []
+        const results = await getMapsOptions({ businessName: query })
         setSuggestions(results)
         setShowSuggestions(results.length > 0)
         setNoResults(results.length === 0)
