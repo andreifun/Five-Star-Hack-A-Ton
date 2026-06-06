@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { getAiGateway } from "./ai/env";
+import { getAiGateway } from "./env";
 import { generateText } from "ai";
 
 export const regenerate = action({
