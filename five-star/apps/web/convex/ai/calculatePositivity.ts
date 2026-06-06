@@ -7,10 +7,6 @@ import { Doc, Id } from "../_generated/dataModel";
 import { getAiGateway } from "./env";
 import { generateText } from "ai";
 
-const gateway = createGatewayProvider({
-  apiKey: process.env.AI_GATEWAY_API_KEY,
-});
-
 const BATCH_SIZE = 50;
 
 // Star-rating-based fallback score for reviews the AI skips or when parsing fails
@@ -78,19 +74,23 @@ export const calculatePositivityForBusiness = internalAction({
 
     if (!businessWithMetrics) throw new Error("Business not found");
 
-    // Fetch ALL reviews, not just the most recent 50
-    const allReviews = (await ctx.runQuery(internal.reviews.listRecentInternal, {
-      businessId: args.businessId,
-      limit: 1000,
-    })) as Doc<"reviews">[];
-
-    if (allReviews.length === 0) return;
-
     let overallScore: number | null = null;
+    let cursor: string | null = null;
+    let hasReviews = false;
 
-    // Process reviews in batches to keep each prompt within token limits
-    for (let batchStart = 0; batchStart < allReviews.length; batchStart += BATCH_SIZE) {
-      const batch = allReviews.slice(batchStart, batchStart + BATCH_SIZE);
+    // Page through ALL reviews using cursor pagination — no arbitrary upper bound
+    do {
+      const page = (await ctx.runQuery(internal.reviews.listPagedInternal, {
+        businessId: args.businessId,
+        cursor,
+        pageSize: BATCH_SIZE,
+      })) as { reviews: Doc<"reviews">[]; nextCursor: string | null };
+
+      const batch = page.reviews;
+      cursor = page.nextCursor;
+
+      if (batch.length === 0) break;
+      hasReviews = true;
 
       const reviewsText = batch
         .map(
@@ -127,7 +127,7 @@ Respond ONLY with valid JSON, no markdown:
 {"score": <number>, "reviewScores": [<${batch.length} numbers>], "angerFlags": [<${batch.length} booleans>]}`;
 
       const { text: rawText } = await generateText({
-        model: gateway(modelId),
+        model: getAiGateway()(modelId),
         prompt,
         maxOutputTokens: 1024,
       });
@@ -156,7 +156,7 @@ Respond ONLY with valid JSON, no markdown:
         // Regex fallback — extract the first number as the batch score
         const match = cleaned.match(/-?\d+(?:\.\d+)?/);
         if (match) batchScore = parseFloat(match[0]);
-        console.error(`Failed to parse positivity response for batch starting at ${batchStart}:`, rawText);
+        console.error("Failed to parse positivity response for batch:", rawText);
         // reviewScores/angerFlags stay empty; padScores fills from star ratings
       }
 
@@ -182,7 +182,9 @@ Respond ONLY with valid JSON, no markdown:
           isAngry,
         })),
       });
-    }
+    } while (cursor !== null);
+
+    if (!hasReviews) return;
 
     if (overallScore !== null) {
       await ctx.runMutation(internal.businessMetrics.setPositivityScore, {
