@@ -77,6 +77,7 @@ export const bulkImportInternal = internalMutation({
         reviewerName: v.optional(v.string()),
         reviewDate: v.number(),
         isPublic: v.boolean(),
+        externalId: v.optional(v.string()),
       }),
     ),
   },
@@ -84,7 +85,24 @@ export const bulkImportInternal = internalMutation({
     const batch = args.reviews.slice(0, 50);
     const remaining = args.reviews.slice(50);
 
+    // Build dedup set from existing reviews for this business
+    const existingExternalIds = new Set<string>();
+    const existing = await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId_and_externalId", (q) =>
+        q.eq("businessId", args.businessId)
+      )
+      .take(5000);
+    for (const r of existing) {
+      if (r.externalId) existingExternalIds.add(`${r.source}:${r.externalId}`);
+    }
+
     for (const review of batch) {
+      if (review.externalId) {
+        const key = `${review.source}:${review.externalId}`;
+        if (existingExternalIds.has(key)) continue;
+        existingExternalIds.add(key);
+      }
       await ctx.db.insert("reviews", {
         businessId: args.businessId,
         ...review,
@@ -102,6 +120,26 @@ export const bulkImportInternal = internalMutation({
     await ctx.scheduler.runAfter(0, internal.businessMetrics.recompute, {
       businessId: args.businessId,
     });
+  },
+});
+
+export const deduplicateExisting = internalMutation({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const reviews = await ctx.db
+      .query("reviews")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .take(1000);
+    const seen = new Set<string>();
+    for (const r of reviews) {
+      if (!r.externalId) continue;
+      const key = `${r.source}:${r.externalId}`;
+      if (seen.has(key)) {
+        await ctx.db.delete(r._id);
+      } else {
+        seen.add(key);
+      }
+    }
   },
 });
 

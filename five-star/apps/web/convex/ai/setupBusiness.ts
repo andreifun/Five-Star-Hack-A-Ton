@@ -6,6 +6,17 @@ import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
 import { createGatewayProvider } from "@ai-sdk/gateway";
 import { generateText } from "ai";
+import { createHash } from "crypto";
+
+function contentFingerprint(
+  source: string,
+  r: { reviewerName?: string; reviewDate: number; rating: number; text?: string; title?: string },
+): string {
+  return createHash("sha1")
+    .update(`${source}|${r.reviewerName ?? ""}|${r.reviewDate}|${r.rating}|${r.text ?? ""}|${r.title ?? ""}`)
+    .digest("hex")
+    .slice(0, 20);
+}
 
 const gateway = createGatewayProvider({
   apiKey: process.env.AI_GATEWAY_API_KEY,
@@ -212,16 +223,14 @@ ${html.slice(0, 15000)}`,
         isFirstPage = false;
       } while (nextPageToken);
 
-      let hasMore = true;
-      while (hasMore) {
-        hasMore = await ctx.runMutation(internal.reviews.deleteByBusinessAndSource, {
-          businessId: business._id,
-          source: "google",
-        });
-      }
       await ctx.runMutation(internal.reviews.bulkImportInternal, {
         businessId: business._id,
-        reviews: allReviews.map((r) => ({ ...r, source: "google" as const, isPublic: true as const })),
+        reviews: allReviews.map((r) => ({
+          ...r,
+          source: "google" as const,
+          isPublic: true as const,
+          externalId: contentFingerprint("google", r),
+        })),
       });
       break;
     }
@@ -266,23 +275,19 @@ ${html.slice(0, 15000)}`,
         }>;
         if (!Array.isArray(reviews) || reviews.length === 0) return;
 
-        const importReviews = reviews.map((r) => ({
-          rating: Math.max(1, Math.min(5, Math.round(r.rating ?? 3))),
-          reviewerName: r.reviewerName,
-          text: r.text,
-          title: r.title,
-          reviewDate: r.reviewDate ? new Date(r.reviewDate).getTime() : Date.now(),
-          source,
-          isPublic: true as const,
-        }));
-
-        let hasMore = true;
-        while (hasMore) {
-          hasMore = await ctx.runMutation(internal.reviews.deleteByBusinessAndSource, {
-            businessId: business._id,
+        const importReviews = reviews.map((r) => {
+          const base = {
+            rating: Math.max(1, Math.min(5, Math.round(r.rating ?? 3))),
+            reviewerName: r.reviewerName,
+            text: r.text,
+            title: r.title,
+            reviewDate: r.reviewDate ? new Date(r.reviewDate).getTime() : Date.now(),
             source,
-          });
-        }
+            isPublic: true as const,
+          };
+          return { ...base, externalId: contentFingerprint(source, base) };
+        });
+
         await ctx.runMutation(internal.reviews.bulkImportInternal, {
           businessId: business._id,
           reviews: importReviews,
