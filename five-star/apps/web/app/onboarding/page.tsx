@@ -89,10 +89,6 @@ function OnboardingForm() {
         type: form.type as BusinessType,
         description: form.description || undefined,
         socialLinks: form.google ? { google: form.google } : undefined,
-        numberOfEmployees: form.numberOfEmployees ? Number(form.numberOfEmployees) : undefined,
-        turnover: form.turnover || undefined,
-        location: form.location || undefined,
-        seasonality: (form.seasonality as Seasonality) || undefined,
       })
       router.push(`/businesses/${id}/setup`)
     } catch (err) {
