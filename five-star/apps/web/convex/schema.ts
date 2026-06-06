@@ -181,6 +181,7 @@ export default defineSchema({
       negative: v.number(),
     }),
     topTopics: v.array(v.string()),
+    positivityScore: v.optional(v.number()),
     pendingTipsCount: v.number(),
     inProgressTipsCount: v.number(),
     completedTipsCount: v.number(),
