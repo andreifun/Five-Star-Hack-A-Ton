@@ -174,5 +174,10 @@ Only output valid JSON, no markdown, no explanation.`;
     await ctx.runMutation(internal.businessMetrics.recompute, {
       businessId: args.businessId,
     });
+
+    await ctx.runAction(
+      internal.ai.calculatePositivity.calculatePositivityForBusiness,
+      { businessId: args.businessId, model: args.model },
+    );
   },
 });

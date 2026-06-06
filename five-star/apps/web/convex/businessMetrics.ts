@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "./_generated/server";
+
 import { requireBusinessOwner } from "./helpers";
 
 export const recompute = internalMutation({
@@ -100,6 +101,19 @@ export const recompute = internalMutation({
       await ctx.db.patch(existing._id, metricsData);
     } else {
       await ctx.db.insert("businessMetrics", metricsData);
+    }
+  },
+});
+
+export const setPositivityScore = internalMutation({
+  args: { businessId: v.id("businesses"), score: v.number() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("businessMetrics")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { positivityScore: args.score });
     }
   },
 });

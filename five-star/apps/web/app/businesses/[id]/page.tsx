@@ -78,7 +78,7 @@ function InfoCard({
   icon: React.ElementType
   label: string
   value: React.ReactNode
-  sub?: string
+  sub?: React.ReactNode
   onClick: () => void
 }) {
   return (
@@ -95,7 +95,7 @@ function InfoCard({
           </div>
           <div className="text-2xl font-semibold tabular-nums">{value}</div>
           {sub && (
-            <p className="text-xs text-muted-foreground">{sub}</p>
+            <p className="text-xs">{sub}</p>
           )}
         </CardContent>
       </Card>
@@ -335,11 +335,22 @@ export default function DashboardPage() {
             />
             <InfoCard
               icon={Smile}
-              label="Positive"
-              value={sentimentTotal > 0 ? `${positivePct}%` : "—"}
+              label="Positivity"
+              value={
+                metrics?.positivityScore !== undefined
+                  ? metrics.positivityScore.toFixed(1)
+                  : "—"
+              }
               sub={
-                sentimentTotal > 0
-                  ? `${sentiment!.positive} positive reviews`
+                metrics?.positivityScore !== undefined
+                  ? (() => {
+                      const s = metrics.positivityScore!
+                      if (s <= -10) return <span className="text-red-900">Very bad</span>
+                      if (s < -2) return <span className="text-red-500">Bad</span>
+                      if (s <= 2) return <span className="text-white">Neutral</span>
+                      if (s >= 10) return <span className="text-green-700">Really good</span>
+                      return <span className="text-blue-400">Good</span>
+                    })()
                   : undefined
               }
               onClick={() => setActiveModal("sentiment")}
