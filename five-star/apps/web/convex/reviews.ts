@@ -261,6 +261,17 @@ export const setReviewPositivityScores = internalMutation({
   },
 });
 
+export const setReviewAngerFlags = internalMutation({
+  args: {
+    entries: v.array(v.object({ reviewId: v.id("reviews"), isAngry: v.boolean() })),
+  },
+  handler: async (ctx, args) => {
+    for (const { reviewId, isAngry } of args.entries) {
+      await ctx.db.patch(reviewId, { isAngry });
+    }
+  },
+});
+
 export const listByBusiness = query({
   args: {
     businessId: v.id("businesses"),

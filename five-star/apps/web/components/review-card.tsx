@@ -33,6 +33,9 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">
             {review.reviewerName ?? "Anonymous"}
+            {review.isAngry && (
+              <span className="ml-1.5" title="Appears written in anger">😤</span>
+            )}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StarRating value={review.rating} />
