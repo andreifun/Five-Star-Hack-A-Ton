@@ -16,11 +16,11 @@ import { StarRating } from "@/components/star-rating"
 import { ReviewCard } from "@/components/review-card"
 import { TipCard } from "@/components/tip-card"
 import { FeatureCard } from "@/components/feature-card"
+import { PromptBar } from "@/components/prompt-bar"
 import { Card, CardContent } from "@workspace/ui/components/card"
 import { Badge } from "@workspace/ui/components/badge"
 import { Progress } from "@workspace/ui/components/progress"
 import { Button } from "@workspace/ui/components/button"
-import { Textarea } from "@workspace/ui/components/textarea"
 import {
   Dialog,
   DialogContent,
@@ -39,7 +39,6 @@ import {
   MessageSquareText,
   Lightbulb,
   Smile,
-  ArrowUp,
   History,
   RefreshCw,
   Plus,
@@ -126,7 +125,6 @@ export default function DashboardPage() {
   // Chat input
   const [input, setInput] = useState("")
   const [isSending, setIsSending] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   // Load threads list
@@ -210,22 +208,15 @@ export default function DashboardPage() {
     setThreadBrowserOpen(false)
   }
 
-  async function submit() {
+  async function submit({ model }: { model: string; images: File[] }) {
     const text = input.trim()
     if (!text || isSending || !activeThreadId) return
     setInput("")
     setIsSending(true)
     try {
-      await sendMessage({ threadId: activeThreadId, businessId, content: text })
+      await sendMessage({ threadId: activeThreadId, businessId, content: text, model })
     } finally {
       setIsSending(false)
-    }
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      submit()
     }
   }
 
@@ -439,51 +430,24 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Prompt bar ── */}
-      <div className="shrink-0 border-t px-4 py-3">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            submit()
-          }}
-          className="mx-auto flex max-w-2xl items-end gap-2"
-        >
+      <PromptBar
+        value={input}
+        onChange={setInput}
+        onSubmit={submit}
+        disabled={!isReady || isSending}
+        placeholder="Ask your assistant…"
+        toolbarLeft={
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="icon"
-            className="shrink-0"
+            className="size-7 text-muted-foreground"
             onClick={() => setThreadBrowserOpen(true)}
-            title="Chat history"
           >
             <History className="size-4" />
           </Button>
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Ask your assistant…"
-            rows={1}
-            className="resize-none overflow-hidden"
-            disabled={!isReady || isSending}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            className="shrink-0"
-            disabled={!isReady || isSending || !input.trim()}
-          >
-            {isSending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <ArrowUp className="size-4" />
-            )}
-          </Button>
-        </form>
-        <p className="mt-1.5 text-center text-xs text-muted-foreground">
-          Enter to send · Shift+Enter for newline
-        </p>
-      </div>
+        }
+      />
 
       {/* ── Rating distribution modal ── */}
       <Dialog open={activeModal === "rating"} onOpenChange={() => setActiveModal(null)}>

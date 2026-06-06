@@ -6,10 +6,9 @@ import { Streamdown } from "streamdown"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { useCurrentBusiness } from "@/components/business-context"
-import { Button } from "@workspace/ui/components/button"
-import { Textarea } from "@workspace/ui/components/textarea"
+import { PromptBar } from "@/components/prompt-bar"
 import { cn } from "@workspace/ui/lib/utils"
-import { Loader2, ArrowUp } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 export default function ChatPage() {
   const { businessId } = useCurrentBusiness()
@@ -21,7 +20,6 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false)
   const creatingRef = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Load (or lazily create) a default thread for this business.
   const threads = useQuery(api.chatThreads.listByBusiness, {
@@ -52,29 +50,15 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isSending])
 
-  useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = "auto"
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
-  }, [input])
-
-  async function submit() {
+  async function submit({ model }: { model: string; images: File[] }) {
     const text = input.trim()
     if (!text || isSending || !threadId) return
     setInput("")
     setIsSending(true)
     try {
-      await sendMessage({ threadId, businessId, content: text })
+      await sendMessage({ threadId, businessId, content: text, model })
     } finally {
       setIsSending(false)
-    }
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      submit()
     }
   }
 
@@ -139,37 +123,12 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <div className="shrink-0 border-t px-4 py-4">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            submit()
-          }}
-          className="mx-auto flex max-w-2xl items-end gap-2"
-        >
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Message your assistant…"
-            rows={1}
-            className="resize-none overflow-hidden"
-            disabled={!isReady || isSending}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!isReady || isSending || !input.trim()}
-            className="shrink-0"
-          >
-            <ArrowUp className="size-4" />
-          </Button>
-        </form>
-        <p className="mt-2 text-center text-xs text-muted-foreground">
-          Enter to send · Shift+Enter for newline
-        </p>
-      </div>
+      <PromptBar
+        value={input}
+        onChange={setInput}
+        onSubmit={submit}
+        disabled={!isReady || isSending}
+      />
     </main>
   )
 }
