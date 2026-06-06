@@ -62,9 +62,7 @@ export const run = internalAction({
         hasLocation: !!business.location,
         hasWebsite: !!business.website,
         hasGoogle: !!sl.google,
-        hasTripadvisor: !!sl.tripadvisor,
         hasBooking: !!sl.booking,
-        hasYelp: !!sl.yelp,
       });
     }
 
