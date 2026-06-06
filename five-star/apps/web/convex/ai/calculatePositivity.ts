@@ -125,38 +125,44 @@ ${reviewsText}
 Respond ONLY with valid JSON, no markdown:
 {"score": <number>, "reviewScores": [<${batch.length} numbers>], "angerFlags": [<${batch.length} booleans>]}`;
 
-      const { text: rawText } = await generateText({
-        model: getAiGateway()(modelId),
-        prompt,
-        maxOutputTokens: 1024,
-      });
-
       let batchScore: number | null = null;
       let reviewScores: number[] = [];
       let angerFlags: boolean[] = [];
 
-      // Strip markdown fences the model sometimes wraps around JSON
-      const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-
       try {
-        const parsed = JSON.parse(cleaned) as {
-          score: number;
-          reviewScores: unknown[];
-          angerFlags?: unknown[];
-        };
-        batchScore = typeof parsed.score === "number" ? parsed.score : null;
-        reviewScores = Array.isArray(parsed.reviewScores)
-          ? (parsed.reviewScores as number[])
-          : [];
-        angerFlags = Array.isArray(parsed.angerFlags)
-          ? (parsed.angerFlags as boolean[])
-          : [];
-      } catch {
-        // Regex fallback — extract the first number as the batch score
-        const match = cleaned.match(/-?\d+(?:\.\d+)?/);
-        if (match) batchScore = parseFloat(match[0]);
-        console.error("Failed to parse positivity response for batch:", rawText);
-        // reviewScores/angerFlags stay empty; padScores fills from star ratings
+        const { text: rawText } = await generateText({
+          model: getAiGateway()(modelId),
+          prompt,
+          maxOutputTokens: 1024,
+        });
+
+        // Strip markdown fences the model sometimes wraps around JSON
+        const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+
+        try {
+          const parsed = JSON.parse(cleaned) as {
+            score: number;
+            reviewScores: unknown[];
+            angerFlags?: unknown[];
+          };
+          batchScore = typeof parsed.score === "number" ? parsed.score : null;
+          reviewScores = Array.isArray(parsed.reviewScores)
+            ? (parsed.reviewScores as number[])
+            : [];
+          angerFlags = Array.isArray(parsed.angerFlags)
+            ? (parsed.angerFlags as boolean[])
+            : [];
+        } catch {
+          // Regex fallback — extract the first number as the batch score
+          const match = cleaned.match(/-?\d+(?:\.\d+)?/);
+          if (match) batchScore = parseFloat(match[0]);
+          console.error("Failed to parse positivity response for batch:", rawText);
+          // reviewScores/angerFlags stay empty; padScores fills from star ratings
+        }
+      } catch (err) {
+        // AI call failed entirely — fall back to star-based scores for this batch
+        console.error("generateText failed for batch, using star-based fallback:", err);
+        // reviewScores/angerFlags stay empty; padScores/padAngerFlags fill from star ratings
       }
 
       // Deterministically fill any missing/mismatched entries
