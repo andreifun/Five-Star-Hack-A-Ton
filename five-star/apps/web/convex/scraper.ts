@@ -286,11 +286,7 @@ export const getMapsOptions = action({
     _ctx,
     args,
   ): Promise<Array<{ name: string; address: string; mapsUrl: string; dataId: string }>> => {
-    const apiKey = getSerpApiKey();
-    if (!apiKey) {
-      console.warn("SERPAPI_API_KEY not configured — place search unavailable");
-      return [];
-    }
+    const apiKey = getSerpApiKey(); // throws if not set — surfaces in Convex dashboard logs
     return serpSearchPlaces(args.businessName.trim(), apiKey);
   },
 });
