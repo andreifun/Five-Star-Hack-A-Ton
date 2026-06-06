@@ -232,6 +232,9 @@ ${html.slice(0, 15000)}`,
           externalId: contentFingerprint("google", r),
         })),
       });
+      await ctx.runMutation(internal.reviews.deduplicateExisting, {
+        businessId: business._id,
+      });
       break;
     }
 
@@ -291,6 +294,9 @@ ${html.slice(0, 15000)}`,
         await ctx.runMutation(internal.reviews.bulkImportInternal, {
           businessId: business._id,
           reviews: importReviews,
+        });
+        await ctx.runMutation(internal.reviews.deduplicateExisting, {
+          businessId: business._id,
         });
       } catch {
         // Unparseable — skip quietly
