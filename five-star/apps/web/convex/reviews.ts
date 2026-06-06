@@ -51,15 +51,17 @@ export const deleteByBusinessAndSource = internalMutation({
     businessId: v.id("businesses"),
     source: sourceValidator,
   },
-  handler: async (ctx, args) => {
-    const reviews = await ctx.db
+  handler: async (ctx, args): Promise<boolean> => {
+    const batch = await ctx.db
       .query("reviews")
-      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
-      .filter((q) => q.eq(q.field("source"), args.source))
-      .collect();
-    for (const r of reviews) {
+      .withIndex("by_businessId_and_source", (q) =>
+        q.eq("businessId", args.businessId).eq("source", args.source)
+      )
+      .take(100);
+    for (const r of batch) {
       await ctx.db.delete(r._id);
     }
+    return batch.length === 100;
   },
 });
 
