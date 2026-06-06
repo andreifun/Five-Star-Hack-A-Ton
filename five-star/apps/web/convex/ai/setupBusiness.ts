@@ -172,6 +172,36 @@ ${html.slice(0, 15000)}`,
       }
       const dataId = dataIdMatch[1]!;
 
+      // Fetch place details (website, address, phone) from the google_maps engine.
+      // This is more reliable than place_info from the reviews engine.
+      try {
+        const placeParams = new URLSearchParams({
+          engine: "google_maps",
+          data_id: dataId,
+          api_key: serpApiKey,
+        });
+        const placeResp = await fetch(`https://serpapi.com/search.json?${placeParams.toString()}`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        if (placeResp.ok) {
+          const placeData = (await placeResp.json()) as {
+            place_results?: { website?: string; address?: string; phone?: string };
+          };
+          const patch: Record<string, string> = {};
+          if (placeData.place_results?.website) patch.mapsWebsite = placeData.place_results.website;
+          if (placeData.place_results?.address && !business.address) patch.address = placeData.place_results.address;
+          if (placeData.place_results?.phone && !business.phone) patch.phone = placeData.place_results.phone;
+          if (Object.keys(patch).length > 0) {
+            await ctx.runMutation(internal.businesses.updateInternal, {
+              businessId: business._id,
+              ...patch,
+            });
+          }
+        }
+      } catch {
+        // Place details failed — continue to reviews
+      }
+
       const allReviews: Array<{
         rating: number;
         reviewerName?: string;
@@ -206,22 +236,7 @@ ${html.slice(0, 15000)}`,
             iso_date?: string;
           }>;
           serpapi_pagination?: { next_page_token?: string };
-          place_info?: { address?: string; phone?: string; website?: string };
         };
-
-        // Extract profile info from first page
-        if (isFirstPage && data.place_info) {
-          const patch: Record<string, string> = {};
-          if (data.place_info.address && !business.address) patch.address = data.place_info.address;
-          if (data.place_info.phone && !business.phone) patch.phone = data.place_info.phone;
-          if (data.place_info.website && !business.website) patch.website = data.place_info.website;
-          if (Object.keys(patch).length > 0) {
-            await ctx.runMutation(internal.businesses.updateInternal, {
-              businessId: business._id,
-              ...patch,
-            });
-          }
-        }
 
         if (isFirstPage && (!data.reviews || data.reviews.length === 0)) {
           throw new Error("No reviews found for this location");
@@ -364,8 +379,14 @@ Generate a realistic list of 8-15 products/menu items for this business. Output 
         break;
       }
 
-      // Restaurants: scrape real menu items from available sources.
+      // Restaurants: scrape real menu items from the Maps-provided website only.
       type MenuItem = { name: string; description?: string; category?: string; price?: number };
+
+      // Re-fetch business to get mapsWebsite set by fetch_google (which ran earlier).
+      const freshBusiness = (await ctx.runQuery(internal.businesses.getByIdInternal, {
+        businessId: business._id,
+      })) as typeof business | null;
+      const mapsWebsite = freshBusiness?.mapsWebsite;
 
       async function extractMenuFromHtml(html: string): Promise<MenuItem[]> {
         if (!html) return [];
@@ -390,91 +411,116 @@ ${html.slice(0, 18000)}`,
         }
       }
 
-      async function findMenuUrl(html: string, baseUrl: string): Promise<string | null> {
-        if (!html) return null;
-        const { text: raw } = await generateText({
-          model: gateway(MODEL_ID),
-          prompt: `Given the following HTML from the restaurant website at ${baseUrl}, is there a link to a separate menu page? If yes, output only the full URL (absolute or relative). If no, output the word "none". HTML:
-${html.slice(0, 10000)}`,
-          maxOutputTokens: 128,
-        });
-        const trimmed = raw.trim();
-        if (!trimmed || trimmed.toLowerCase() === "none") return null;
-        // Resolve relative URLs
+      async function extractMenuFromImage(imageBytes: Uint8Array): Promise<MenuItem[]> {
         try {
-          return new URL(trimmed, baseUrl).href;
+          const { text: raw } = await generateText({
+            model: gateway("anthropic/claude-sonnet-4-5"),
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "image", image: imageBytes },
+                  {
+                    type: "text",
+                    text: `This is a photo of a restaurant menu. Extract all visible menu items you can actually read in the image. Return a JSON array: [{ name: string, description?: string, category?: string, price?: number }]. If you cannot read any menu items, return []. Only output valid JSON array, no markdown.`,
+                  },
+                ],
+              },
+            ],
+            maxOutputTokens: 2048,
+          });
+          const items = JSON.parse(raw.trim());
+          return Array.isArray(items) ? items : [];
+        } catch {
+          return [];
+        }
+      }
+
+      async function fetchImageBytes(url: string): Promise<Uint8Array | null> {
+        try {
+          const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+          if (!resp.ok) return null;
+          const contentType = resp.headers.get("content-type") ?? "";
+          if (!contentType.startsWith("image/")) return null;
+          const buffer = await resp.arrayBuffer();
+          return new Uint8Array(buffer);
         } catch {
           return null;
         }
       }
 
+      function extractMenuImageUrls(html: string, baseUrl: string): string[] {
+        const menuKeywords = /menu|carta|food|dish|drink/i;
+        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+        const candidates: string[] = [];
+        let match;
+        while ((match = imgRegex.exec(html)) !== null) {
+          const src = match[1]!;
+          const tag = match[0]!;
+          // Include if the tag or src mentions menu-related keywords
+          if (menuKeywords.test(src) || menuKeywords.test(tag)) {
+            try {
+              candidates.push(new URL(src, baseUrl).href);
+            } catch {
+              // skip invalid URLs
+            }
+          }
+        }
+        return candidates.slice(0, 5);
+      }
+
       let menuItems: MenuItem[] = [];
 
-      // Source A: business website (authoritative URL from Google Maps place_info)
-      if (menuItems.length === 0 && business.website) {
-        const html = await safelyFetchUrl(business.website);
-        if (html) {
-          const items = await extractMenuFromHtml(html);
-          if (items.length > 0) {
-            menuItems = items;
-          } else {
-            // Try to find a linked menu sub-page
-            const menuUrl = await findMenuUrl(html, business.website);
-            if (menuUrl) {
-              const menuHtml = await safelyFetchUrl(menuUrl);
-              const subItems = await extractMenuFromHtml(menuHtml);
-              if (subItems.length > 0) menuItems = subItems;
-            }
-          }
-        }
-      }
+      if (!mapsWebsite) {
+        // No Maps-provided website — skip straight to sentinel.
+      } else {
+        // Step 1: fetch the website and look for a dedicated menu page.
+        const homeHtml = await safelyFetchUrl(mapsWebsite);
 
-      // Source B: linked restaurant-directory sites that may carry menus
-      if (menuItems.length === 0) {
-        const directoryDomains = ["restaurantguru", "zomato", "thefork", "happycow", "yelp"];
-        for (const link of (Object.values(business.socialLinks ?? {}) as (string | undefined)[])) {
-          if (!link) continue;
-          const inDirectory = directoryDomains.some((d) => (link as string).includes(d));
-          if (!inDirectory) continue;
-          const html = await safelyFetchUrl(link as string);
-          const items = await extractMenuFromHtml(html);
-          if (items.length > 0) {
-            menuItems = items;
-            break;
-          }
-        }
-      }
-
-      // Source C: SerpAPI web search for the restaurant's menu
-      if (menuItems.length === 0) {
-        const serpApiKey = process.env.SERPAPI_API_KEY;
-        if (serpApiKey) {
-          const params = new URLSearchParams({
-            engine: "google",
-            q: `"${business.name}" menu`,
-            num: "3",
-            api_key: serpApiKey,
+        // Find a /menu sub-page link.
+        let menuPageHtml = "";
+        if (homeHtml) {
+          const { text: menuUrlRaw } = await generateText({
+            model: gateway(MODEL_ID),
+            prompt: `Given the following HTML from ${mapsWebsite}, find a link to a dedicated menu page. Look for links or paths containing "menu", "carta", "food", "meniu". Output only the full URL, or the word "none" if not found. HTML:
+${homeHtml.slice(0, 10000)}`,
+            maxOutputTokens: 128,
           });
-          try {
-            const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
-              signal: AbortSignal.timeout(15000),
-            });
-            if (resp.ok) {
-              const data = (await resp.json()) as {
-                organic_results?: Array<{ link?: string }>;
-              };
-              for (const result of data.organic_results ?? []) {
-                if (!result.link) continue;
-                const html = await safelyFetchUrl(result.link);
-                const items = await extractMenuFromHtml(html);
-                if (items.length > 0) {
-                  menuItems = items;
-                  break;
-                }
+          const menuUrlTrimmed = menuUrlRaw.trim();
+          if (menuUrlTrimmed && menuUrlTrimmed.toLowerCase() !== "none") {
+            try {
+              const menuUrl = new URL(menuUrlTrimmed, mapsWebsite).href;
+              // Only fetch if it's a different page
+              if (menuUrl !== mapsWebsite) {
+                menuPageHtml = await safelyFetchUrl(menuUrl);
               }
+            } catch {
+              // Invalid URL — skip
             }
-          } catch {
-            // Search failed — continue
+          }
+        }
+
+        // Step 2a: text extraction (prefer menu page over home page).
+        const htmlToScan = menuPageHtml || homeHtml;
+        if (htmlToScan) {
+          menuItems = await extractMenuFromHtml(htmlToScan);
+          // If menu page had nothing, also try home page
+          if (menuItems.length === 0 && menuPageHtml && homeHtml) {
+            menuItems = await extractMenuFromHtml(homeHtml);
+          }
+        }
+
+        // Step 2b: image extraction if text pass found nothing.
+        if (menuItems.length === 0 && htmlToScan) {
+          const imageUrls = extractMenuImageUrls(htmlToScan, mapsWebsite);
+          for (const imgUrl of imageUrls) {
+            const imgData = await fetchImageBytes(imgUrl);
+            if (!imgData) continue;
+            const items = await extractMenuFromImage(imgData);
+            if (items.length > 0) {
+              menuItems = items;
+              break;
+            }
           }
         }
       }

@@ -193,6 +193,7 @@ export const updateInternal = internalMutation({
     phone: v.optional(v.string()),
     openingHours: v.optional(v.string()),
     locationType: v.optional(v.union(v.literal("rural"), v.literal("urban"))),
+    mapsWebsite: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { businessId, ...fields } = args;
