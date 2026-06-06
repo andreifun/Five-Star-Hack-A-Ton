@@ -27,9 +27,14 @@ const MODEL_ID = "minimax/minimax-m3";
 async function safelyFetchUrl(url: string): Promise<string> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; five-star-bot/1.0)" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+      },
       signal: AbortSignal.timeout(15000),
     });
+    if (!res.ok) return "";
     const text = await res.text();
     // Truncate to ~20KB to stay within model context limits
     return text.slice(0, 20000);
@@ -173,11 +178,13 @@ ${html.slice(0, 15000)}`,
       const dataId = dataIdMatch[1]!;
 
       // Fetch place details (website, address, phone) from the google_maps engine.
-      // This is more reliable than place_info from the reviews engine.
+      let mapsWebsiteSet = false;
       try {
         const placeParams = new URLSearchParams({
           engine: "google_maps",
-          data_id: dataId,
+          type: "place",
+          // data parameter format required for place lookups
+          data: `!4m2!3m1!1s${dataId}`,
           api_key: serpApiKey,
         });
         const placeResp = await fetch(`https://serpapi.com/search.json?${placeParams.toString()}`, {
@@ -185,12 +192,19 @@ ${html.slice(0, 15000)}`,
         });
         if (placeResp.ok) {
           const placeData = (await placeResp.json()) as {
-            place_results?: { website?: string; address?: string; phone?: string };
+            place_results?: {
+              website?: string;
+              address?: string;
+              phone?: string;
+              links?: { website?: string };
+            };
           };
+          const pr = placeData.place_results;
+          const website = pr?.website ?? pr?.links?.website;
           const patch: Record<string, string> = {};
-          if (placeData.place_results?.website) patch.mapsWebsite = placeData.place_results.website;
-          if (placeData.place_results?.address && !business.address) patch.address = placeData.place_results.address;
-          if (placeData.place_results?.phone && !business.phone) patch.phone = placeData.place_results.phone;
+          if (website) { patch.mapsWebsite = website; mapsWebsiteSet = true; }
+          if (pr?.address && !business.address) patch.address = pr.address;
+          if (pr?.phone && !business.phone) patch.phone = pr.phone;
           if (Object.keys(patch).length > 0) {
             await ctx.runMutation(internal.businesses.updateInternal, {
               businessId: business._id,
@@ -236,7 +250,22 @@ ${html.slice(0, 15000)}`,
             iso_date?: string;
           }>;
           serpapi_pagination?: { next_page_token?: string };
+          place_info?: { address?: string; phone?: string; website?: string };
         };
+
+        // Fallback: if the place details call above didn't set mapsWebsite, try place_info here
+        if (isFirstPage && data.place_info && !mapsWebsiteSet) {
+          const fallbackPatch: Record<string, string> = {};
+          if (data.place_info.website) fallbackPatch.mapsWebsite = data.place_info.website;
+          if (data.place_info.address && !business.address) fallbackPatch.address = data.place_info.address;
+          if (data.place_info.phone && !business.phone) fallbackPatch.phone = data.place_info.phone;
+          if (Object.keys(fallbackPatch).length > 0) {
+            await ctx.runMutation(internal.businesses.updateInternal, {
+              businessId: business._id,
+              ...fallbackPatch,
+            });
+          }
+        }
 
         if (isFirstPage && (!data.reviews || data.reviews.length === 0)) {
           throw new Error("No reviews found for this location");
