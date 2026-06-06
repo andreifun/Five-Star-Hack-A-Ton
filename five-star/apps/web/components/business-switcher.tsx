@@ -39,7 +39,7 @@ export function BusinessSwitcher() {
     if (pendingDelete.id === businessId) {
       const remaining = businesses?.filter((b) => b._id !== pendingDelete.id)
       if (remaining && remaining.length > 0) {
-        router.push(`/businesses/${remaining[0]._id}`)
+        router.push(`/businesses/${remaining[0]!._id}`)
       } else {
         router.push("/onboarding")
       }
