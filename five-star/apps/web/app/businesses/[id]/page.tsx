@@ -95,7 +95,10 @@ export default function DashboardPage() {
     paginationOpts: { numItems: 30, cursor: null },
   })
 
-  const todos = useQuery(api.agentTodos.listByBusiness, { businessId }) ?? []
+  const todos = useQuery(
+    api.agentTodos.listByThread,
+    activeThreadId ? { businessId, threadId: activeThreadId } : "skip",
+  ) ?? []
   const completeTodo = useMutation(api.agentTodos.complete)
   const deleteTodo = useMutation(api.agentTodos.remove)
 

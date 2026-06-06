@@ -36,6 +36,20 @@ export const listByBusiness = query({
   },
 });
 
+export const listByThread = query({
+  args: { businessId: v.id("businesses"), threadId: v.id("chatThreads") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("agentTodos")
+      .withIndex("by_businessId_and_isCompleted", (q) =>
+        q.eq("businessId", args.businessId).eq("isCompleted", false),
+      )
+      .filter((q) => q.eq(q.field("threadId"), args.threadId))
+      .order("desc")
+      .collect();
+  },
+});
+
 export const complete = mutation({
   args: { id: v.id("agentTodos") },
   handler: async (ctx, args) => {
