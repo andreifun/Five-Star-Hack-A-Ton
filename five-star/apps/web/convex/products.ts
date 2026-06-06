@@ -120,6 +120,17 @@ export const countByBusiness = query({
   },
 });
 
+export const deleteByBusiness = internalMutation({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    const products = await ctx.db
+      .query("products")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .collect();
+    for (const p of products) await ctx.db.delete(p._id);
+  },
+});
+
 export const reorder = mutation({
   args: {
     businessId: v.id("businesses"),

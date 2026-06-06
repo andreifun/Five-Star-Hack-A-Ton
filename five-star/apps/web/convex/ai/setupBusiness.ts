@@ -206,7 +206,7 @@ ${html.slice(0, 15000)}`,
             iso_date?: string;
           }>;
           serpapi_pagination?: { next_page_token?: string };
-          place_info?: { address?: string; phone?: string };
+          place_info?: { address?: string; phone?: string; website?: string };
         };
 
         // Extract profile info from first page
@@ -214,6 +214,7 @@ ${html.slice(0, 15000)}`,
           const patch: Record<string, string> = {};
           if (data.place_info.address && !business.address) patch.address = data.place_info.address;
           if (data.place_info.phone && !business.phone) patch.phone = data.place_info.phone;
+          if (data.place_info.website && !business.website) patch.website = data.place_info.website;
           if (Object.keys(patch).length > 0) {
             await ctx.runMutation(internal.businesses.updateInternal, {
               businessId: business._id,
@@ -321,38 +322,178 @@ ${html.slice(0, 15000)}`,
     }
 
     case "discover_products": {
-      const { text } = await generateText({
-        model: gateway(MODEL_ID),
-        prompt: `You are helping set up a ${business.type} called "${business.name}".
+      // Clear existing products so re-runs via "Refresh data" don't accumulate duplicates.
+      await ctx.runMutation(internal.products.deleteByBusiness, {
+        businessId: business._id,
+      });
+
+      // Non-restaurants: keep AI-generated product list.
+      if (business.type !== "restaurant") {
+        const { text } = await generateText({
+          model: gateway(MODEL_ID),
+          prompt: `You are helping set up a ${business.type} called "${business.name}".
 ${business.description ? `Description: ${business.description}` : ""}
 ${business.cuisineTypes?.length ? `Cuisine: ${business.cuisineTypes.join(", ")}` : ""}
 
 Generate a realistic list of 8-15 products/menu items for this business. Output a JSON array with objects: { name: string, description?: string, category?: string, price?: number, isSignatureDish?: boolean }. Only output valid JSON array, no markdown.`,
-        maxOutputTokens: 1024,
-      });
+          maxOutputTokens: 1024,
+        });
+        try {
+          const products = JSON.parse(text) as Array<{
+            name: string;
+            description?: string;
+            category?: string;
+            price?: number;
+            isSignatureDish?: boolean;
+          }>;
+          if (!Array.isArray(products)) break;
+          for (const p of products.slice(0, 15)) {
+            await ctx.runMutation(internal.products.createInternal, {
+              businessId: business._id,
+              name: p.name,
+              description: p.description,
+              category: p.category,
+              price: p.price,
+              isSignatureDish: p.isSignatureDish ?? false,
+              isAvailable: true,
+            });
+          }
+        } catch {
+          // Unparseable — skip quietly
+        }
+        break;
+      }
 
-      try {
-        const products = JSON.parse(text) as Array<{
-          name: string;
-          description?: string;
-          category?: string;
-          price?: number;
-          isSignatureDish?: boolean;
-        }>;
-        if (!Array.isArray(products)) return;
-        for (const p of products.slice(0, 15)) {
+      // Restaurants: scrape real menu items from available sources.
+      type MenuItem = { name: string; description?: string; category?: string; price?: number };
+
+      async function extractMenuFromHtml(html: string): Promise<MenuItem[]> {
+        if (!html) return [];
+        const { text: raw } = await generateText({
+          model: gateway(MODEL_ID),
+          prompt: `Extract menu items from the following restaurant web page HTML. Return a JSON array of objects: { name: string, description?: string, category?: string, price?: number }. If there are no menu items, return an empty array []. Only output valid JSON array, no markdown.
+
+HTML:
+${html.slice(0, 18000)}`,
+          maxOutputTokens: 2048,
+        });
+        try {
+          const items = JSON.parse(raw.trim());
+          return Array.isArray(items) ? items : [];
+        } catch {
+          return [];
+        }
+      }
+
+      async function findMenuUrl(html: string, baseUrl: string): Promise<string | null> {
+        if (!html) return null;
+        const { text: raw } = await generateText({
+          model: gateway(MODEL_ID),
+          prompt: `Given the following HTML from the restaurant website at ${baseUrl}, is there a link to a separate menu page? If yes, output only the full URL (absolute or relative). If no, output the word "none". HTML:
+${html.slice(0, 10000)}`,
+          maxOutputTokens: 128,
+        });
+        const trimmed = raw.trim();
+        if (!trimmed || trimmed.toLowerCase() === "none") return null;
+        // Resolve relative URLs
+        try {
+          return new URL(trimmed, baseUrl).href;
+        } catch {
+          return null;
+        }
+      }
+
+      let menuItems: MenuItem[] = [];
+
+      // Source A: business website (authoritative URL from Google Maps place_info)
+      if (menuItems.length === 0 && business.website) {
+        const html = await safelyFetchUrl(business.website);
+        if (html) {
+          const items = await extractMenuFromHtml(html);
+          if (items.length > 0) {
+            menuItems = items;
+          } else {
+            // Try to find a linked menu sub-page
+            const menuUrl = await findMenuUrl(html, business.website);
+            if (menuUrl) {
+              const menuHtml = await safelyFetchUrl(menuUrl);
+              const subItems = await extractMenuFromHtml(menuHtml);
+              if (subItems.length > 0) menuItems = subItems;
+            }
+          }
+        }
+      }
+
+      // Source B: linked restaurant-directory sites that may carry menus
+      if (menuItems.length === 0) {
+        const directoryDomains = ["restaurantguru", "zomato", "thefork", "happycow", "yelp"];
+        for (const link of (Object.values(business.socialLinks ?? {}) as (string | undefined)[])) {
+          if (!link) continue;
+          const inDirectory = directoryDomains.some((d) => (link as string).includes(d));
+          if (!inDirectory) continue;
+          const html = await safelyFetchUrl(link as string);
+          const items = await extractMenuFromHtml(html);
+          if (items.length > 0) {
+            menuItems = items;
+            break;
+          }
+        }
+      }
+
+      // Source C: SerpAPI web search for the restaurant's menu
+      if (menuItems.length === 0) {
+        const serpApiKey = process.env.SERPAPI_API_KEY;
+        if (serpApiKey) {
+          const params = new URLSearchParams({
+            engine: "google",
+            q: `"${business.name}" menu`,
+            num: "3",
+            api_key: serpApiKey,
+          });
+          try {
+            const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
+              signal: AbortSignal.timeout(15000),
+            });
+            if (resp.ok) {
+              const data = (await resp.json()) as {
+                organic_results?: Array<{ link?: string }>;
+              };
+              for (const result of data.organic_results ?? []) {
+                if (!result.link) continue;
+                const html = await safelyFetchUrl(result.link);
+                const items = await extractMenuFromHtml(html);
+                if (items.length > 0) {
+                  menuItems = items;
+                  break;
+                }
+              }
+            }
+          } catch {
+            // Search failed — continue
+          }
+        }
+      }
+
+      if (menuItems.length > 0) {
+        for (const p of menuItems.slice(0, 30)) {
           await ctx.runMutation(internal.products.createInternal, {
             businessId: business._id,
             name: p.name,
             description: p.description,
             category: p.category,
             price: p.price,
-            isSignatureDish: p.isSignatureDish ?? false,
+            isSignatureDish: false,
             isAvailable: true,
           });
         }
-      } catch {
-        // Unparseable — skip quietly
+      } else {
+        // No real menu found — create sentinel so the UI shows "No items found".
+        await ctx.runMutation(internal.products.createInternal, {
+          businessId: business._id,
+          name: "No items found",
+          isSignatureDish: false,
+          isAvailable: false,
+        });
       }
       break;
     }
