@@ -371,7 +371,12 @@ Generate a realistic list of 8-15 products/menu items for this business. Output 
         if (!html) return [];
         const { text: raw } = await generateText({
           model: gateway(MODEL_ID),
-          prompt: `Extract menu items from the following restaurant web page HTML. Return a JSON array of objects: { name: string, description?: string, category?: string, price?: number }. If there are no menu items, return an empty array []. Only output valid JSON array, no markdown.
+          prompt: `You are a strict data extractor. Look at the HTML below and extract ONLY menu items that are EXPLICITLY listed in the HTML text — dish names, food/drink items, prices, descriptions that are literally present in the page content.
+
+DO NOT invent, guess, or infer any items. DO NOT use your knowledge of what a restaurant might serve. If the page contains no actual menu items in its text, return an empty array [].
+
+Return a JSON array of objects: { name: string, description?: string, category?: string, price?: number }
+Only output valid JSON array, no markdown, no explanation.
 
 HTML:
 ${html.slice(0, 18000)}`,
