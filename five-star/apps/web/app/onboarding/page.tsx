@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { useMutation, useQuery } from "convex/react"
+import { useMutation, useQuery, useAction } from "convex/react"
 import { UserButton } from "@clerk/nextjs"
 import { api } from "@/convex/_generated/api"
 import { AuthGate } from "@/components/auth-gate"
@@ -15,6 +15,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@workspace
 import { Separator } from "@workspace/ui/components/separator"
 import { RadioGroup, RadioGroupItem } from "@workspace/ui/components/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select"
+import { MapPin, Loader2, X } from "lucide-react"
 
 const BUSINESS_TYPES = [
   { value: "restaurant", label: "Restaurant" },
@@ -53,10 +54,13 @@ interface FormState {
   seasonality: Seasonality | ""
 }
 
+type PlaceSuggestion = { name: string; address: string; mapsUrl: string; dataId?: string }
+
 function OnboardingForm() {
   const router = useRouter()
   const createBusiness = useMutation(api.businesses.create)
   const businesses = useQuery(api.businesses.listAllByCurrentUser)
+  const scrapeMenuFromUrl = useAction(api.scraper.scrapeMenuFromUrl)
   const hasBusinesses = (businesses?.length ?? 0) > 0
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -75,47 +79,64 @@ function OnboardingForm() {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  type PlaceSuggestion = { name: string; address: string; mapsUrl: string }
+  // ── Place search state ──────────────────────────────────────────────────────
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([])
   const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+  const [isScraping, setIsScraping] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [noResults, setNoResults] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Step 1: debounced search via Next.js API route (reads SERPAPI_API_KEY from .env)
   useEffect(() => {
     if (selectedPlace) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (form.name.trim().length < 3) {
+    const query = form.name.trim()
+    if (query.length < 3) {
       setSuggestions([])
       setShowSuggestions(false)
+      setNoResults(false)
       return
     }
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true)
+      setNoResults(false)
       try {
-        const resp = await fetch(`/api/places?q=${encodeURIComponent(form.name.trim())}`)
+        const resp = await fetch(`/api/places?q=${encodeURIComponent(query)}`)
         const results: PlaceSuggestion[] = resp.ok ? await resp.json() : []
         setSuggestions(results)
         setShowSuggestions(results.length > 0)
+        setNoResults(results.length === 0)
       } catch {
         setSuggestions([])
         setShowSuggestions(false)
+        setNoResults(true)
       } finally {
         setIsSearching(false)
       }
     }, 600)
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [form.name, selectedPlace])
 
-  function handlePlaceSelect(place: PlaceSuggestion) {
-    console.log("Selected place:", place)
+  // Step 2: triggered when user picks a place — background scrape
+  async function handlePlaceSelect(place: PlaceSuggestion) {
     setSelectedPlace(place)
     set("name", place.name)
     set("google", place.mapsUrl)
     setSuggestions([])
     setShowSuggestions(false)
+    setNoResults(false)
+
+    setIsScraping(true)
+    try {
+      const result = await scrapeMenuFromUrl({ mapsUrl: place.mapsUrl, dataId: place.dataId })
+      console.log("Scrape result:", result)
+    } catch (err) {
+      console.warn("Background scrape failed:", err)
+    } finally {
+      setIsScraping(false)
+    }
   }
 
   function handleClearPlace() {
@@ -123,6 +144,7 @@ function OnboardingForm() {
     set("google", "")
     setSuggestions([])
     setShowSuggestions(false)
+    setNoResults(false)
   }
 
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -199,44 +221,64 @@ function OnboardingForm() {
                     }}
                     placeholder="e.g. The Golden Fork"
                     autoComplete="off"
+                    className={selectedPlace ? "border-green-500 pr-8 focus-visible:ring-green-500" : ""}
                   />
                   {isSearching && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      Searching…
-                    </span>
+                    <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                  )}
+                  {selectedPlace && !isSearching && (
+                    <button
+                      type="button"
+                      onClick={handleClearPlace}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                      aria-label="Clear selection"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                  {noResults && !isSearching && !selectedPlace && form.name.trim().length >= 3 && (
+                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border bg-popover shadow-lg">
+                      <p className="px-3 py-3 text-sm text-muted-foreground">No places found for "{form.name.trim()}"</p>
+                    </div>
                   )}
                   {showSuggestions && suggestions.length > 0 && (
-                    <div className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md">
+                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border bg-popover shadow-lg">
+                      <p className="border-b px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Google Maps results
+                      </p>
                       {suggestions.map((place, i) => (
                         <button
                           key={i}
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => handlePlaceSelect(place)}
-                          className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground first:rounded-t-md last:rounded-b-md"
+                          className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent"
                         >
-                          <span className="font-medium">{place.name}</span>
-                          {place.address && (
-                            <span className="text-xs text-muted-foreground">{place.address}</span>
-                          )}
+                          <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{place.name}</p>
+                            {place.address && (
+                              <p className="truncate text-xs text-muted-foreground">{place.address}</p>
+                            )}
+                          </div>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
                 {selectedPlace && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="inline-flex items-center gap-1 rounded-full border bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                      <span>📍 {selectedPlace.name}</span>
-                      <button
-                        type="button"
-                        onClick={handleClearPlace}
-                        className="ml-1 rounded-full hover:text-destructive"
-                        aria-label="Clear selection"
-                      >
-                        ✕
-                      </button>
-                    </span>
+                  <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 dark:border-green-900 dark:bg-green-950/30">
+                    <MapPin className="size-4 shrink-0 text-green-600 dark:text-green-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-green-800 dark:text-green-300">{selectedPlace.name}</p>
+                      <p className="truncate text-xs text-green-600 dark:text-green-500">{selectedPlace.address}</p>
+                    </div>
+                    {isScraping && (
+                      <div className="flex shrink-0 items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                        <Loader2 className="size-3 animate-spin" />
+                        <span>Scanning…</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

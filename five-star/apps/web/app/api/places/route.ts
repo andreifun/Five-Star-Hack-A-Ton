@@ -6,49 +6,69 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([]);
   }
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey = process.env.SERPAPI_API_KEY;
   if (!apiKey) {
-    console.warn("GOOGLE_MAPS_API_KEY not configured");
+    console.error("[places] SERPAPI_API_KEY not set");
     return NextResponse.json([]);
   }
 
-  const url = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-  url.searchParams.set("query", query);
-  url.searchParams.set("key", apiKey);
+  const url = new URL("https://serpapi.com/search.json");
+  url.searchParams.set("engine", "google_maps");
+  url.searchParams.set("type", "search");
+  url.searchParams.set("q", query.trim());
+  url.searchParams.set("api_key", apiKey);
 
   let resp: Response;
   try {
-    resp = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
+    resp = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
   } catch (err) {
-    console.error("Places API fetch failed:", err);
+    console.error("[places] fetch error:", err);
     return NextResponse.json([]);
   }
 
   if (!resp.ok) {
-    console.error("Places API error:", resp.status, await resp.text());
+    const body = await resp.text();
+    console.error("[places] SerpAPI HTTP error:", resp.status, body);
     return NextResponse.json([]);
   }
 
-  const data = (await resp.json()) as {
-    status: string;
-    results?: Array<{
-      name?: string;
-      formatted_address?: string;
-      place_id?: string;
-    }>;
-  };
+  const data = await resp.json() as Record<string, unknown>;
 
-  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-    console.error("Places API status:", data.status);
+  // Log the top-level keys and first result so we can see the real shape
+  console.log("[places] SerpAPI response keys:", Object.keys(data));
+  const localResults = data.local_results as Array<Record<string, unknown>> | undefined;
+  if (localResults?.length) {
+    console.log("[places] first result sample:", JSON.stringify(localResults[0], null, 2));
+  } else {
+    console.log("[places] no local_results — full response:", JSON.stringify(data, null, 2));
   }
 
-  const results = (data.results ?? []).slice(0, 3).map((r) => ({
-    name: r.name ?? "",
-    address: r.formatted_address ?? "",
-    mapsUrl: r.place_id
-      ? `https://www.google.com/maps/place/?q=place_id:${r.place_id}`
-      : "",
-  })).filter((r) => r.name && r.mapsUrl);
+  if (!localResults?.length) {
+    return NextResponse.json([]);
+  }
 
+  const results = localResults.slice(0, 3).map((r) => {
+    const name = (r.title as string | undefined) ?? "";
+    const address = (r.address as string | undefined) ?? "";
+    const dataId = (r.data_id as string | undefined) ?? "";
+    const placeId = (r.place_id as string | undefined) ?? "";
+    const reviewsLink = (r.reviews_link as string | undefined) ?? "";
+    const placeIdSearch = (r.place_id_search as string | undefined) ?? "";
+
+    let mapsUrl = "";
+    if (dataId) {
+      mapsUrl = `https://www.google.com/maps/place/${encodeURIComponent(name)}/data=!1s${dataId}`;
+    } else if (placeId) {
+      mapsUrl = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+    } else if (reviewsLink) {
+      mapsUrl = reviewsLink;
+    } else if (placeIdSearch) {
+      mapsUrl = placeIdSearch;
+    }
+
+    return { name, address, mapsUrl, dataId };
+  }).filter((r) => r.name && r.mapsUrl);
+
+  console.log("[places] returning", results.length, "results");
   return NextResponse.json(results);
 }

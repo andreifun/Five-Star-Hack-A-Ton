@@ -15,6 +15,8 @@ import type * as ai_generateTips from "../ai/generateTips.js";
 import type * as ai_setupBusiness from "../ai/setupBusiness.js";
 import type * as businessMetrics from "../businessMetrics.js";
 import type * as businesses from "../businesses.js";
+import type * as placesSearch from "../placesSearch.js";
+import type * as scraper from "../scraper.js";
 import type * as chatMessages from "../chatMessages.js";
 import type * as chatThreads from "../chatThreads.js";
 import type * as helpers from "../helpers.js";
@@ -39,6 +41,8 @@ declare const fullApi: ApiFromModules<{
   "ai/setupBusiness": typeof ai_setupBusiness;
   businessMetrics: typeof businessMetrics;
   businesses: typeof businesses;
+  placesSearch: typeof placesSearch;
+  scraper: typeof scraper;
   chatMessages: typeof chatMessages;
   chatThreads: typeof chatThreads;
   helpers: typeof helpers;
