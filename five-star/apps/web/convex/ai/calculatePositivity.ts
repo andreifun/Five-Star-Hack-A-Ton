@@ -68,27 +68,36 @@ Using all of the following signals together:
 - The sentiment and tone of the review texts
 - The gap between your text-predicted stars and the actual stars (positive gap = reviewer gave more stars than text suggests; negative gap = reviewer gave fewer stars than text suggests)
 
-Calculate a single POSITIVITY SCORE for this business that represents the overall customer sentiment on a scale from -10 to 10, where:
-- -10 = extremely negative (very bad experience across all reviews)
+Calculate:
+1. A single overall POSITIVITY SCORE for this business (−10 to 10)
+2. An individual POSITIVITY SCORE for each review (−10 to 10), in the same order as the input list
+
+Scale:
+- −10 = extremely negative
 - 0 = completely neutral or mixed
-- +10 = extremely positive (outstanding experience across all reviews)
+- +10 = extremely positive
 
 Reviews:
 ${reviewsText}
 
 Respond ONLY with a valid JSON object in this exact format, no markdown, no explanation:
-{"score": <number between -10 and 10, one decimal place allowed>}`;
+{"score": <overall score, one decimal allowed>, "reviewScores": [<score for review 0>, <score for review 1>, ...]}`;
 
     const { text: rawText } = await generateText({
       model: gateway(modelId),
       prompt,
-      maxOutputTokens: 256,
+      maxOutputTokens: 512,
     });
 
     let score: number;
+    let reviewScores: number[] = [];
     try {
-      const parsed = JSON.parse(rawText.trim()) as { score: number };
+      const parsed = JSON.parse(rawText.trim()) as {
+        score: number;
+        reviewScores: number[];
+      };
       score = parsed.score;
+      reviewScores = Array.isArray(parsed.reviewScores) ? parsed.reviewScores : [];
     } catch {
       const match = rawText.match(/-?\d+(\.\d+)?/);
       if (!match) {
@@ -104,5 +113,18 @@ Respond ONLY with a valid JSON object in this exact format, no markdown, no expl
       businessId: args.businessId,
       score,
     });
+
+    if (reviewScores.length > 0) {
+      const reviewScoreEntries = reviewScores
+        .slice(0, reviews.length)
+        .map((s, i) => ({
+          reviewId: reviews[i]!._id,
+          score: Math.max(-10, Math.min(10, s)),
+        }));
+
+      await ctx.runMutation(internal.reviews.setReviewPositivityScores, {
+        entries: reviewScoreEntries,
+      });
+    }
   },
 });
