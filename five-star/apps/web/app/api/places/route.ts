@@ -6,49 +6,59 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([]);
   }
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey = process.env.SERPAPI_API_KEY;
   if (!apiKey) {
-    console.warn("GOOGLE_MAPS_API_KEY not configured");
+    console.warn("SERPAPI_API_KEY not configured");
     return NextResponse.json([]);
   }
 
-  const url = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-  url.searchParams.set("query", query);
-  url.searchParams.set("key", apiKey);
+  const url = new URL("https://serpapi.com/search.json");
+  url.searchParams.set("engine", "google_maps");
+  url.searchParams.set("type", "search");
+  url.searchParams.set("q", query.trim());
+  url.searchParams.set("api_key", apiKey);
 
   let resp: Response;
   try {
-    resp = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
+    resp = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
   } catch (err) {
-    console.error("Places API fetch failed:", err);
+    console.error("SerpAPI fetch failed:", err);
     return NextResponse.json([]);
   }
 
   if (!resp.ok) {
-    console.error("Places API error:", resp.status, await resp.text());
+    console.error("SerpAPI error:", resp.status);
     return NextResponse.json([]);
   }
 
   const data = (await resp.json()) as {
-    status: string;
-    results?: Array<{
-      name?: string;
-      formatted_address?: string;
+    local_results?: Array<{
+      title?: string;
+      address?: string;
+      // SerpAPI data_id is the hex CID used by the scraping pipeline
+      data_id?: string;
       place_id?: string;
+      reviews_link?: string;
     }>;
   };
 
-  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-    console.error("Places API status:", data.status);
-  }
-
-  const results = (data.results ?? []).slice(0, 3).map((r) => ({
-    name: r.name ?? "",
-    address: r.formatted_address ?? "",
-    mapsUrl: r.place_id
-      ? `https://www.google.com/maps/place/?q=place_id:${r.place_id}`
-      : "",
-  })).filter((r) => r.name && r.mapsUrl);
+  const results = (data.local_results ?? [])
+    .slice(0, 3)
+    .filter((r) => r.title && (r.data_id ?? r.place_id ?? r.reviews_link))
+    .map((r) => {
+      // Prefer data_id — it's the hex CID that setupBusiness.ts extracts via
+      // the !1s(0x...) regex and uses for the SerpAPI place + reviews lookup.
+      let mapsUrl: string;
+      if (r.data_id) {
+        const encoded = encodeURIComponent(r.title ?? "");
+        mapsUrl = `https://www.google.com/maps/place/${encoded}/data=!1s${r.data_id}`;
+      } else if (r.place_id) {
+        mapsUrl = `https://www.google.com/maps/place/?q=place_id:${r.place_id}`;
+      } else {
+        mapsUrl = r.reviews_link!;
+      }
+      return { name: r.title!, address: r.address ?? "", mapsUrl };
+    });
 
   return NextResponse.json(results);
 }
