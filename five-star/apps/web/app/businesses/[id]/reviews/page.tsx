@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState } from "react"
 import { usePaginatedQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
@@ -59,11 +59,6 @@ export default function ReviewsPage() {
     { initialNumItems: 20 },
   )
 
-  const sortedResults = useMemo(
-    () => [...results.filter((r) => r.hasText), ...results.filter((r) => !r.hasText)],
-    [results],
-  )
-
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl space-y-5 p-6">
@@ -113,7 +108,7 @@ export default function ReviewsPage() {
           </p>
         ) : (
           <div className="space-y-3">
-            {sortedResults.map((review) => (
+            {results.map((review) => (
               <ReviewCard key={review._id} review={review} />
             ))}
           </div>
