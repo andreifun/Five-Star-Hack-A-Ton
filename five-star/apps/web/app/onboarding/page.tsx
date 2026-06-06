@@ -25,6 +25,22 @@ const BUSINESS_TYPES = [
 
 type BusinessType = "restaurant" | "hotel" | "cafe" | "bar"
 type Seasonality = "all_year" | "seasonal"
+type TurnoverRange =
+  | "under_100k"
+  | "100k_500k"
+  | "500k_1m"
+  | "1m_5m"
+  | "5m_10m"
+  | "over_10m"
+
+const TURNOVER_RANGES: { value: TurnoverRange; label: string }[] = [
+  { value: "under_100k", label: "Under 100,000 RON" },
+  { value: "100k_500k", label: "100,000 – 500,000 RON" },
+  { value: "500k_1m", label: "500,000 – 1,000,000 RON" },
+  { value: "1m_5m", label: "1,000,000 – 5,000,000 RON" },
+  { value: "5m_10m", label: "5,000,000 – 10,000,000 RON" },
+  { value: "over_10m", label: "Over 10,000,000 RON" },
+]
 
 interface FormState {
   name: string
@@ -32,7 +48,7 @@ interface FormState {
   description: string
   google: string
   numberOfEmployees: string
-  turnover: string
+  turnover: TurnoverRange | ""
   location: string
   seasonality: Seasonality | ""
 }
@@ -71,7 +87,7 @@ function OnboardingForm() {
         description: form.description || undefined,
         socialLinks: form.google ? { google: form.google } : undefined,
         numberOfEmployees: form.numberOfEmployees ? Number(form.numberOfEmployees) : undefined,
-        turnover: form.turnover ? Number(form.turnover) : undefined,
+        turnover: form.turnover || undefined,
         location: form.location || undefined,
         seasonality: (form.seasonality as Seasonality) || undefined,
       })
@@ -167,15 +183,17 @@ function OnboardingForm() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="turnover">Annual turnover (€)</Label>
-                <Input
-                  id="turnover"
-                  type="number"
-                  min={0}
-                  value={form.turnover}
-                  onChange={(e) => set("turnover", e.target.value)}
-                  placeholder="e.g. 500000"
-                />
+                <Label>Annual turnover (RON)</Label>
+                <Select value={form.turnover} onValueChange={(v) => set("turnover", v as TurnoverRange)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select turnover range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TURNOVER_RANGES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="location">Location</Label>
