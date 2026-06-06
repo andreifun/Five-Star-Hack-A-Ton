@@ -204,35 +204,27 @@ export const listByBusiness = query({
     if (args.source) {
       return await ctx.db
         .query("reviews")
-        .withIndex("by_businessId_and_source", (q) =>
-          q.eq("businessId", args.businessId).eq("source", args.source!),
-        )
-        .filter((q) =>
-          args.hasText !== undefined
-            ? q.eq(q.field("hasText"), args.hasText)
-            : true,
-        )
+        .withIndex("by_businessId_and_source_and_hasText_and_reviewDate", (q) => {
+          const base = q.eq("businessId", args.businessId).eq("source", args.source!);
+          return args.hasText !== undefined ? base.eq("hasText", args.hasText) : base;
+        })
         .order("desc")
         .paginate(args.paginationOpts);
     }
     if (args.sentiment) {
       return await ctx.db
         .query("reviews")
-        .withIndex("by_businessId_and_sentiment", (q) =>
-          q.eq("businessId", args.businessId).eq("sentiment", args.sentiment!),
-        )
-        .filter((q) =>
-          args.hasText !== undefined
-            ? q.eq(q.field("hasText"), args.hasText)
-            : true,
-        )
+        .withIndex("by_businessId_and_sentiment_and_hasText_and_reviewDate", (q) => {
+          const base = q.eq("businessId", args.businessId).eq("sentiment", args.sentiment!);
+          return args.hasText !== undefined ? base.eq("hasText", args.hasText) : base;
+        })
         .order("desc")
         .paginate(args.paginationOpts);
     }
     if (args.hasText !== undefined) {
       return await ctx.db
         .query("reviews")
-        .withIndex("by_businessId_and_hasText", (q) =>
+        .withIndex("by_businessId_and_hasText_and_reviewDate", (q) =>
           q.eq("businessId", args.businessId).eq("hasText", args.hasText!),
         )
         .order("desc")
@@ -240,7 +232,9 @@ export const listByBusiness = query({
     }
     return await ctx.db
       .query("reviews")
-      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .withIndex("by_businessId_and_hasText_and_reviewDate", (q) =>
+        q.eq("businessId", args.businessId),
+      )
       .order("desc")
       .paginate(args.paginationOpts);
   },
