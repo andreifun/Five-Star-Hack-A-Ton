@@ -379,7 +379,7 @@ Generate a realistic list of 8-15 products/menu items for this business. Output 
         break;
       }
 
-      // Restaurants: scrape real menu items from the Maps-provided website only.
+      // Restaurants: crawl the Maps-provided website to find real menu items.
       type MenuItem = { name: string; description?: string; category?: string; price?: number };
 
       // Re-fetch business to get mapsWebsite set by fetch_google (which ran earlier).
@@ -387,6 +387,8 @@ Generate a realistic list of 8-15 products/menu items for this business. Output 
         businessId: business._id,
       })) as typeof business | null;
       const mapsWebsite = freshBusiness?.mapsWebsite;
+
+      // --- Extraction helpers ---
 
       async function extractMenuFromHtml(html: string): Promise<MenuItem[]> {
         if (!html) return [];
@@ -449,80 +451,116 @@ ${html.slice(0, 18000)}`,
         }
       }
 
-      function extractMenuImageUrls(html: string, baseUrl: string): string[] {
-        const menuKeywords = /menu|carta|food|dish|drink/i;
+      function extractMenuImageUrls(html: string, pageUrl: string): string[] {
+        const menuKeywords = /menu|meniu|carta|food|dish|drink/i;
         const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
         const candidates: string[] = [];
-        let match;
-        while ((match = imgRegex.exec(html)) !== null) {
-          const src = match[1]!;
-          const tag = match[0]!;
-          // Include if the tag or src mentions menu-related keywords
+        let m;
+        while ((m = imgRegex.exec(html)) !== null) {
+          const src = m[1]!;
+          const tag = m[0]!;
           if (menuKeywords.test(src) || menuKeywords.test(tag)) {
-            try {
-              candidates.push(new URL(src, baseUrl).href);
-            } catch {
-              // skip invalid URLs
-            }
+            try { candidates.push(new URL(src, pageUrl).href); } catch { /* skip */ }
           }
         }
         return candidates.slice(0, 5);
       }
 
+      // --- Crawler ---
+
+      function scoreLinkForMenu(href: string, text: string): number {
+        const combined = (href + " " + text).toLowerCase();
+        let score = 0;
+        if (/menu|meniu/.test(combined)) score += 5;
+        if (/delivery|livrare|order|comanda|food|mancare|carta/.test(combined)) score += 3;
+        if (/restaurant|eat|drink|bar|bistro/.test(combined)) score += 2;
+        return score;
+      }
+
+      function pageContainsMenuSignal(html: string): boolean {
+        return /menu|meniu/i.test(html);
+      }
+
+      function extractLinks(html: string, pageUrl: string, startHostname: string): Array<{ url: string; score: number }> {
+        const linkRegex = /<a[^>]+href=["']([^"'#?][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        const seen = new Set<string>();
+        const results: Array<{ url: string; score: number }> = [];
+        const skipExts = /\.(css|js|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|ico|xml|json)(\?|$)/i;
+        let m;
+        while ((m = linkRegex.exec(html)) !== null) {
+          const rawHref = m[1]!.trim();
+          const linkText = m[2]!.replace(/<[^>]+>/g, "").trim();
+          let absUrl: string;
+          try {
+            absUrl = new URL(rawHref, pageUrl).href;
+          } catch { continue; }
+          if (!absUrl.startsWith("http")) continue;
+          if (skipExts.test(absUrl)) continue;
+          if (seen.has(absUrl)) continue;
+          seen.add(absUrl);
+          const isSameDomain = new URL(absUrl).hostname === startHostname;
+          const score = scoreLinkForMenu(absUrl, linkText);
+          // Cross-domain links only if they strongly suggest menu content
+          if (!isSameDomain && score < 3) continue;
+          results.push({ url: absUrl, score });
+        }
+        return results;
+      }
+
+      async function crawlForMenu(startUrl: string): Promise<MenuItem[]> {
+        const MAX_PAGES = 20;
+        const MAX_DEPTH = 4;
+        const visited = new Set<string>();
+        // Queue: [url, depth, score] — sorted by score descending
+        const queue: Array<{ url: string; depth: number; score: number }> = [
+          { url: startUrl, depth: 0, score: 10 },
+        ];
+        let startHostname: string;
+        try { startHostname = new URL(startUrl).hostname; } catch { return []; }
+
+        while (queue.length > 0 && visited.size < MAX_PAGES) {
+          // Sort by score descending (highest priority first)
+          queue.sort((a, b) => b.score - a.score);
+          const item = queue.shift()!;
+          if (visited.has(item.url)) continue;
+          visited.add(item.url);
+
+          const html = await safelyFetchUrl(item.url);
+          if (!html) continue;
+
+          if (pageContainsMenuSignal(html)) {
+            // Try text extraction
+            const textItems = await extractMenuFromHtml(html);
+            if (textItems.length > 0) return textItems;
+
+            // Try image extraction
+            const imgUrls = extractMenuImageUrls(html, item.url);
+            for (const imgUrl of imgUrls) {
+              const bytes = await fetchImageBytes(imgUrl);
+              if (!bytes) continue;
+              const imgItems = await extractMenuFromImage(bytes);
+              if (imgItems.length > 0) return imgItems;
+            }
+          }
+
+          // Enqueue outbound links if budget allows
+          if (item.depth < MAX_DEPTH) {
+            const links = extractLinks(html, item.url, startHostname);
+            for (const link of links) {
+              if (!visited.has(link.url)) {
+                queue.push({ url: link.url, depth: item.depth + 1, score: link.score });
+              }
+            }
+          }
+        }
+
+        return [];
+      }
+
       let menuItems: MenuItem[] = [];
 
-      if (!mapsWebsite) {
-        // No Maps-provided website — skip straight to sentinel.
-      } else {
-        // Step 1: fetch the website and look for a dedicated menu page.
-        const homeHtml = await safelyFetchUrl(mapsWebsite);
-
-        // Find a /menu sub-page link.
-        let menuPageHtml = "";
-        if (homeHtml) {
-          const { text: menuUrlRaw } = await generateText({
-            model: gateway(MODEL_ID),
-            prompt: `Given the following HTML from ${mapsWebsite}, find a link to a dedicated menu page. Look for links or paths containing "menu", "carta", "food", "meniu". Output only the full URL, or the word "none" if not found. HTML:
-${homeHtml.slice(0, 10000)}`,
-            maxOutputTokens: 128,
-          });
-          const menuUrlTrimmed = menuUrlRaw.trim();
-          if (menuUrlTrimmed && menuUrlTrimmed.toLowerCase() !== "none") {
-            try {
-              const menuUrl = new URL(menuUrlTrimmed, mapsWebsite).href;
-              // Only fetch if it's a different page
-              if (menuUrl !== mapsWebsite) {
-                menuPageHtml = await safelyFetchUrl(menuUrl);
-              }
-            } catch {
-              // Invalid URL — skip
-            }
-          }
-        }
-
-        // Step 2a: text extraction (prefer menu page over home page).
-        const htmlToScan = menuPageHtml || homeHtml;
-        if (htmlToScan) {
-          menuItems = await extractMenuFromHtml(htmlToScan);
-          // If menu page had nothing, also try home page
-          if (menuItems.length === 0 && menuPageHtml && homeHtml) {
-            menuItems = await extractMenuFromHtml(homeHtml);
-          }
-        }
-
-        // Step 2b: image extraction if text pass found nothing.
-        if (menuItems.length === 0 && htmlToScan) {
-          const imageUrls = extractMenuImageUrls(htmlToScan, mapsWebsite);
-          for (const imgUrl of imageUrls) {
-            const imgData = await fetchImageBytes(imgUrl);
-            if (!imgData) continue;
-            const items = await extractMenuFromImage(imgData);
-            if (items.length > 0) {
-              menuItems = items;
-              break;
-            }
-          }
-        }
+      if (mapsWebsite) {
+        menuItems = await crawlForMenu(mapsWebsite);
       }
 
       if (menuItems.length > 0) {
