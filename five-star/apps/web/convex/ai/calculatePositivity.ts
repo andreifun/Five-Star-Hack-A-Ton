@@ -58,7 +58,7 @@ export const calculatePositivityForBusiness = internalAction({
 
     const prompt = `You are an expert sentiment analyst. You will be given a list of customer reviews for a ${businessWithMetrics.type}, each with the actual star rating given and the review text.
 
-For each review that has text, predict what star rating (1-5) you would assign based solely on the text content — ignoring the actual stars. Then compare your text-based prediction to the actual stars given to detect misalignment.
+For reviews that have text, predict what star rating (1-5) you would assign based solely on the text content — ignoring the actual stars. Then compare your text-based prediction to the actual stars given to detect misalignment.
 
 Using all of the following signals together:
 - The actual star ratings (absolute sentiment level)
@@ -67,8 +67,10 @@ Using all of the following signals together:
 
 Calculate:
 1. A single overall POSITIVITY SCORE for this business (−10 to 10)
-2. An individual POSITIVITY SCORE for each review (−10 to 10), in the same order as the input list
-3. An individual ANGER FLAG for each review (true/false), in the same order as the input list
+2. An individual POSITIVITY SCORE for every review (−10 to 10), in the same order as the input list — for reviews with no text, derive the score from the star rating alone (5★ ≈ +8, 4★ ≈ +4, 3★ ≈ 0, 2★ ≈ −4, 1★ ≈ −8)
+3. An individual ANGER FLAG for every review (true/false), in the same order as the input list — for reviews with no text, always use false
+
+IMPORTANT: The reviewScores and angerFlags arrays MUST have exactly the same length as the input review list (${reviews.length} entries). Do not skip any index.
 
 Scale for positivity scores:
 - −10 = extremely negative
@@ -98,7 +100,7 @@ Respond ONLY with a valid JSON object in this exact format, no markdown, no expl
     const { text: rawText } = await generateText({
       model: gateway(modelId),
       prompt,
-      maxOutputTokens: 512,
+      maxOutputTokens: 1024,
     });
 
     let score: number;
