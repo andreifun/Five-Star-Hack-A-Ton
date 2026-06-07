@@ -59,11 +59,9 @@ export const run = internalAction({
     if (existingTasks.length === 0) {
       await ctx.runMutation(internal.setupTasks.createForBusiness, {
         businessId: args.businessId,
-        businessType: business.type,
         hasLocation: !!business.location,
         hasWebsite: !!business.website,
         hasGoogle: !!sl.google,
-        hasBooking: !!sl.booking,
       });
     }
 
@@ -303,21 +301,18 @@ ${html.slice(0, 15000)}`,
     }
 
     case "fetch_tripadvisor":
-    case "fetch_booking":
     case "fetch_yelp": {
       const urlMap = {
         fetch_tripadvisor: sl.tripadvisor,
-        fetch_booking: sl.booking,
         fetch_yelp: sl.yelp,
       } as Record<string, string | undefined>;
       const sourceMap = {
         fetch_tripadvisor: "tripadvisor",
-        fetch_booking: "booking",
         fetch_yelp: "yelp",
-      } as Record<string, "tripadvisor" | "booking" | "yelp">;
+      } as Record<string, "tripadvisor" | "yelp">;
 
       const url = urlMap[task.type];
-      const source = sourceMap[task.type] as "tripadvisor" | "booking" | "yelp";
+      const source = sourceMap[task.type] as "tripadvisor" | "yelp";
       if (!url || !source) return;
 
       const html = await safelyFetchUrl(url);

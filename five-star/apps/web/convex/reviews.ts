@@ -8,7 +8,6 @@ const sourceValidator = v.union(
   v.literal("google"),
   v.literal("tripadvisor"),
   v.literal("manual"),
-  v.literal("booking"),
   v.literal("yelp"),
   v.literal("other"),
 );

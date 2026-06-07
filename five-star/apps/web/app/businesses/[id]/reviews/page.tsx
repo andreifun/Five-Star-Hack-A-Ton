@@ -17,7 +17,6 @@ type Sentiment = NonNullable<Doc<"reviews">["sentiment"]>
 const SOURCES: Source[] = [
   "google",
   "tripadvisor",
-  "booking",
   "yelp",
   "manual",
   "other",

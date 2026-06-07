@@ -33,7 +33,6 @@ type TaskStatus = Doc<"setupTasks">["status"]
 const SOURCE_LABELS: Record<string, string> = {
   website: "Website",
   google: "Google",
-  booking: "Booking.com",
   tripadvisor: "Tripadvisor",
   yelp: "Yelp",
   manual: "Manual",

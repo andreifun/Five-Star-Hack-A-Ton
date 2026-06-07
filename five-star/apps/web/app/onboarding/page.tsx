@@ -108,7 +108,7 @@ function OnboardingForm() {
     setIsSearching(true)
     setNoResults(false)
     try {
-      const results = await getMapsOptions({ businessName: query })
+      const results = await getMapsOptions({ businessName: query, businessType: form.type || undefined })
       setSuggestions(results)
       setShowSuggestions(results.length > 0)
       setNoResults(results.length === 0)
