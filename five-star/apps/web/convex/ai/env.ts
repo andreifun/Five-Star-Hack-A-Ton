@@ -35,3 +35,7 @@ export function getSerpApiKey() {
 export function getOptionalSerpApiKey() {
   return process.env.SERPAPI_API_KEY?.trim() || undefined;
 }
+
+export function getOptionalSerperApiKey() {
+  return process.env.SERPER_API_KEY?.trim() || undefined;
+}
