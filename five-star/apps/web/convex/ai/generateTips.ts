@@ -137,6 +137,9 @@ Price range: ${businessWithMetrics.priceRange || "Not specified"}
 ${businessWithMetrics.cuisineTypes?.length ? `Cuisine: ${businessWithMetrics.cuisineTypes.join(", ")}` : ""}
 ${businessWithMetrics.starRating ? `Star rating: ${businessWithMetrics.starRating}` : ""}
 ${businessWithMetrics.capacity ? `Capacity: ${businessWithMetrics.capacity} guests` : ""}
+${businessWithMetrics.numberOfEmployees ? `Number of employees: ${businessWithMetrics.numberOfEmployees}` : ""}
+${businessWithMetrics.turnover ? `Annual turnover: ${businessWithMetrics.turnover}` : ""}
+${businessWithMetrics.seasonality ? `Seasonality: ${businessWithMetrics.seasonality === "seasonal" ? "Seasonal (not open all year)" : "All year round"}` : ""}
 
 Metrics:
 - Average rating: ${businessWithMetrics.metrics?.avgRating.toFixed(2) ?? "N/A"} / 5
@@ -169,9 +172,12 @@ ${reviewsText || "No reviews yet."}
 ${pendingTitles ? `Already pending tips (do not duplicate): ${pendingTitles}` : ""}
 
 Based on the reviews and business context, generate 3-7 specific, actionable improvement tips. Each tip must:
-- Be concrete and immediately actionable
+- Be concrete and immediately actionable — focus on real service, operations, or product improvements (e.g. fix slow service, improve cleanliness, add a missing menu item). Do NOT suggest hollow engagement tactics like "respond to all reviews", "engage customers who leave 5-star reviews", or "ask for more reviews".
 - Reference specific patterns from reviews where relevant
-- Be realistic for this type of business
+- Be realistic and proportionate to the business's size and financial capacity:
+  - If turnover indicates a small/low-revenue business, avoid expensive recommendations (e.g. major renovations, large ad budgets, enterprise software). Suggest free or low-cost improvements instead.
+  - If the business has few employees, do not suggest hiring more staff unless reviews strongly indicate understaffing. If it has many employees, scheduling/shift adjustments are fair to suggest.
+- Be seasonally appropriate: if the business is seasonal, only recommend investments or changes relevant to the active season. If it operates all year, tips can address year-round improvements.
 - Not duplicate any already-pending tips listed above
 - If temporal trends are listed above, prioritise addressing those spikes and mention the time context in the tip content (e.g. "AC complaints have spiked this month")
 
