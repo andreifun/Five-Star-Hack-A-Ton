@@ -29,6 +29,8 @@ type DragState = {
   moved: boolean
 }
 
+const PRIORITY_ORDER: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+
 export function TipsKanbanBoard({
   businessId,
   tips: persistedTips,
@@ -144,11 +146,17 @@ export function TipsKanbanBoard({
     })
   }
 
+  function sortByPriority(items: Tip[]) {
+    return [...items].sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3))
+  }
+
   function getColumnItems(status: Status) {
-    if (!drag) return tips.filter((tip) => tip.status === status).map((tip) => ({ type: "tip" as const, data: tip }))
-    const columnTips = tips.filter((tip) => tip.status === status && tip._id !== drag.tip._id).map((tip) => ({ type: "tip" as const, data: tip }))
-    if (drag.hoverColumn !== status) return columnTips
-    return [...columnTips.slice(0, drag.hoverIndex), { type: "placeholder" as const }, ...columnTips.slice(drag.hoverIndex)]
+    const columnTips = tips.filter((tip) => tip.status === status)
+    const ordered = status === "pending" ? sortByPriority(columnTips) : columnTips
+    if (!drag) return ordered.map((tip) => ({ type: "tip" as const, data: tip }))
+    const withoutDrag = ordered.filter((tip) => tip._id !== drag.tip._id).map((tip) => ({ type: "tip" as const, data: tip }))
+    if (drag.hoverColumn !== status) return withoutDrag
+    return [...withoutDrag.slice(0, drag.hoverIndex), { type: "placeholder" as const }, ...withoutDrag.slice(drag.hoverIndex)]
   }
 
   const rotation = drag ? (drag.offsetX / drag.cardWidth - 0.5) * 8 : 0
