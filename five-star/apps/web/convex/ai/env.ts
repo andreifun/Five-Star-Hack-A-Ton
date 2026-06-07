@@ -39,3 +39,13 @@ export function getOptionalSerpApiKey() {
 export function getOptionalSerperApiKey() {
   return process.env.SERPER_API_KEY?.trim() || undefined;
 }
+
+export function getApifyApiKey() {
+  const apiKey = process.env.APIFY_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "APIFY_API_KEY is not configured. Set it in your Convex project or local environment."
+    );
+  }
+  return apiKey;
+}
