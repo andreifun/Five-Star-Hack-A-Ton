@@ -41,7 +41,7 @@ const SOURCE_LABELS: Record<string, string> = {
   other: "Other",
 }
 
-function AnimatedNumber({ value }: { value: number }) {
+function AnimatedNumber({ value }: { value: number | undefined }) {
   return (
     <motion.span
       key={value}
@@ -49,7 +49,7 @@ function AnimatedNumber({ value }: { value: number }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
     >
-      {value.toLocaleString()}
+      {(value ?? 0).toLocaleString()}
     </motion.span>
   )
 }
@@ -177,7 +177,7 @@ function SetupPageContent() {
   )
 }
 
-function DiscoveryWidget({ icon: Icon, label, value, children }: { icon: typeof Globe2; label: string; value: number; children: React.ReactNode }) {
+function DiscoveryWidget({ icon: Icon, label, value, children }: { icon: typeof Globe2; label: string; value: number | undefined; children: React.ReactNode }) {
   return (
     <motion.div layout className="relative h-28 overflow-hidden rounded-2xl bg-card p-4 shadow-md ring-1 ring-foreground/10">
       <div className="flex items-center gap-1.5 text-muted-foreground"><Icon className="size-4" /><p className="text-xs font-medium">{label}</p></div>
