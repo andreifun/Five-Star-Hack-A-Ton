@@ -258,8 +258,8 @@ ${html.slice(0, 15000)}`,
 
       const allReviews = (place.reviews ?? []).map((r) => ({
         rating: Math.max(1, Math.min(5, Math.round(r.stars ?? 3))),
-        reviewerName: r.name,
-        text: r.text,
+        reviewerName: r.name ?? undefined,
+        text: r.text ?? undefined,
         reviewDate: r.publishedAtDate ? new Date(r.publishedAtDate).getTime() : Date.now(),
         externalId: r.reviewId ?? "",
       }));
