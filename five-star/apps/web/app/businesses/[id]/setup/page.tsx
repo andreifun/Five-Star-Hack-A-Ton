@@ -18,7 +18,6 @@ import {
   RefreshCw,
   Sparkles,
   Star,
-  Store,
   TriangleAlert,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -137,15 +136,12 @@ function SetupPageContent() {
           <div className="flex justify-center py-28"><Loader2 className="size-7 animate-spin text-muted-foreground/70" /></div>
         ) : overview === null ? null : (
           <>
-            <section className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="mt-6 grid gap-2 sm:grid-cols-3">
               <DiscoveryWidget icon={Globe2} label="Sources connected" value={overview.discoveries.connectedSources.length}>
                 {overview.discoveries.connectedSources.length > 0 ? overview.discoveries.connectedSources.map((source) => SOURCE_LABELS[source] ?? source).join(" · ") : "Searching for sources"}
               </DiscoveryWidget>
               <DiscoveryWidget icon={Star} label="Reviews found" value={overview.discoveries.reviewCount}>
                 {Object.entries(overview.discoveries.reviewsBySource).length > 0 ? Object.entries(overview.discoveries.reviewsBySource).map(([source, count]) => `${SOURCE_LABELS[source] ?? source} ${count}`).join(" · ") : "Waiting for review imports"}
-              </DiscoveryWidget>
-              <DiscoveryWidget icon={Store} label="Products mapped" value={overview.discoveries.productCount}>
-                Menu items and services discovered
               </DiscoveryWidget>
               <DiscoveryWidget icon={Lightbulb} label="Tips prepared" value={overview.discoveries.tipCount}>
                 Prioritized opportunities ready to act on

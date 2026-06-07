@@ -12,9 +12,8 @@ const TASK_DEFINITIONS: Array<{
   { type: "fetch_website", label: "Scanning your website", order: 1 },
   { type: "fetch_google", label: "Importing Google profile", order: 2 },
   { type: "fetch_booking", label: "Importing Booking.com reviews", order: 3 },
-  { type: "discover_products", label: "Discovering menu & products", order: 4 },
-  { type: "generate_tips", label: "Generating improvement tips", order: 5 },
-  { type: "finalize", label: "Finalizing setup", order: 6 },
+  { type: "generate_tips", label: "Generating improvement tips", order: 4 },
+  { type: "finalize", label: "Finalizing setup", order: 5 },
 ];
 
 export const createForBusiness = internalMutation({
@@ -31,7 +30,6 @@ export const createForBusiness = internalMutation({
       classify_location: args.hasLocation,
       fetch_website: args.hasWebsite,
       fetch_google: args.hasGoogle,
-      discover_products: args.hasGoogle || args.hasWebsite,
       fetch_booking: args.hasBooking,
     };
 
@@ -105,17 +103,13 @@ export const getOverview = query({
     const business = await ctx.db.get(args.businessId);
     if (!business) return null;
 
-    const [tasks, reviews, products, tips] = await Promise.all([
+    const [tasks, reviews, tips] = await Promise.all([
       ctx.db
         .query("setupTasks")
         .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
         .collect(),
       ctx.db
         .query("reviews")
-        .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
-        .collect(),
-      ctx.db
-        .query("products")
         .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
         .collect(),
       ctx.db
@@ -144,7 +138,6 @@ export const getOverview = query({
         connectedSources,
         reviewCount: reviews.length,
         reviewsBySource,
-        productCount: products.length,
         tipCount: tips.length,
       },
       profile: {

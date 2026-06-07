@@ -9,7 +9,6 @@ const SETUP_TASKS = [
   ["fetch_website", "Scanning your website"],
   ["fetch_google", "Importing Google profile"],
   ["fetch_booking", "Importing Booking.com reviews"],
-  ["discover_products", "Discovering menu & products"],
   ["generate_tips", "Generating improvement tips"],
   ["finalize", "Finalizing setup"],
 ] as const;
