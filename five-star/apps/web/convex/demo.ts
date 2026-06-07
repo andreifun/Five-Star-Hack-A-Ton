@@ -37,9 +37,14 @@ export const listTemplates = query({
         _id: b._id,
         name: b.name,
         type: b.type,
+        description: b.description,
+        address: b.address,
         city: b.city,
         country: b.country,
-        address: b.address,
+        website: b.website ?? b.mapsWebsite,
+        numberOfEmployees: b.numberOfEmployees,
+        location: b.location,
+        seasonality: b.seasonality,
       }));
   },
 });
