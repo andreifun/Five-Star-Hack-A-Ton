@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction, ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
-import { getAiGateway, getSerpApiKey } from "./env";
+import { getAiGateway, getApifyApiKey } from "./env";
 import { generateText } from "ai";
 import { createHash } from "crypto";
 
@@ -156,148 +156,121 @@ ${html.slice(0, 15000)}`,
     case "fetch_google": {
       if (!sl.google) return;
 
-      const serpApiKey = getSerpApiKey();
-      if (!serpApiKey) throw new Error("SERPAPI_API_KEY is not configured");
+      const apifyKey = getApifyApiKey();
 
-      // Resolve short URLs (maps.app.goo.gl) to the full URL to extract the data_id
+      // Resolve short URLs (maps.app.goo.gl) before passing to Apify
       let resolvedUrl = sl.google;
       if (sl.google.includes("maps.app.goo.gl")) {
         const r = await fetch(sl.google, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(10000) });
         resolvedUrl = r.url;
       }
 
-      let dataId: string;
-      const dataIdMatch = resolvedUrl.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
-      if (dataIdMatch) {
-        dataId = dataIdMatch[1]!;
-      } else {
-        const cidMatch = resolvedUrl.match(/[?&]cid=(\d+)/);
-        if (!cidMatch) {
-          throw new Error(`Could not extract Google Maps place ID from URL: ${sl.google}`);
-        }
-        dataId = `0x0:0x${BigInt(cidMatch[1]!).toString(16)}`;
+      // Start the Apify Google Maps Scraper actor run
+      const runResp = await fetch(
+        `https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${apifyKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startUrls: [{ url: resolvedUrl }],
+            maxReviews: 200,
+            reviewsSort: "newest",
+            language: "en",
+            scrapeReviews: true,
+          }),
+          signal: AbortSignal.timeout(30000),
+        },
+      );
+
+      if (!runResp.ok) {
+        throw new Error(`[fetch_google] Apify actor start failed: ${runResp.status}`);
       }
 
-      // Fetch place details (website, address, phone) from the google_maps engine.
-      let mapsWebsiteSet = false;
-      try {
-        const placeParams = new URLSearchParams({
-          engine: "google_maps",
-          type: "place",
-          // data parameter format required for place lookups
-          data: `!4m2!3m1!1s${dataId}`,
-          api_key: serpApiKey,
-        });
-        const placeResp = await fetch(`https://serpapi.com/search.json?${placeParams.toString()}`, {
-          signal: AbortSignal.timeout(15000),
-        });
-        if (placeResp.ok) {
-          const placeData = (await placeResp.json()) as {
-            place_results?: {
-              website?: string;
-              address?: string;
-              phone?: string;
-              links?: { website?: string };
-            };
-          };
-          const pr = placeData.place_results;
-          const website = pr?.website ?? pr?.links?.website;
-          const patch: Record<string, string> = {};
-          if (website) { patch.mapsWebsite = website; mapsWebsiteSet = true; }
-          if (pr?.address && !business.address) patch.address = pr.address;
-          if (pr?.phone && !business.phone) patch.phone = pr.phone;
-          if (Object.keys(patch).length > 0) {
-            await ctx.runMutation(internal.businesses.updateInternal, {
-              businessId: business._id,
-              ...patch,
-            });
-          }
-        }
-      } catch {
-        // Place details failed — continue to reviews
+      const runData = (await runResp.json()) as {
+        data?: { id?: string; defaultDatasetId?: string; status?: string };
+      };
+      const runId = runData.data?.id;
+      const datasetId = runData.data?.defaultDatasetId;
+      if (!runId || !datasetId) {
+        throw new Error("[fetch_google] Apify run response missing id or datasetId");
       }
 
-      const allReviews: Array<{
-        rating: number;
-        reviewerName?: string;
-        text?: string;
-        reviewDate: number;
-      }> = [];
-
-      let nextPageToken: string | undefined;
-      let isFirstPage = true;
-      do {
-        const params = new URLSearchParams({
-          engine: "google_maps_reviews",
-          data_id: dataId,
-          api_key: serpApiKey,
-          hl: "en",
-        });
-        if (nextPageToken) params.set("next_page_token", nextPageToken);
-
-        const resp = await fetch(`https://serpapi.com/search.json?${params.toString()}`, {
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!resp.ok) {
-          console.warn(`[fetch_google] SerpAPI reviews error ${resp.status} — skipping review import`);
-          break;
-        }
-
-        const data = (await resp.json()) as {
-          error?: string;
-          reviews?: Array<{
-            rating?: number;
-            snippet?: string;
-            user?: { name?: string };
-            iso_date?: string;
-          }>;
-          serpapi_pagination?: { next_page_token?: string };
-          place_info?: { address?: string; phone?: string; website?: string };
-        };
-
-        if (data.error) {
-          console.warn(`[fetch_google] SerpAPI reviews error — skipping review import:`, data.error);
-          break;
-        }
-
-        // Fallback: if the place details call above didn't set mapsWebsite, try place_info here
-        if (isFirstPage && data.place_info && !mapsWebsiteSet) {
-          const fallbackPatch: Record<string, string> = {};
-          if (data.place_info.website) fallbackPatch.mapsWebsite = data.place_info.website;
-          if (data.place_info.address && !business.address) fallbackPatch.address = data.place_info.address;
-          if (data.place_info.phone && !business.phone) fallbackPatch.phone = data.place_info.phone;
-          if (Object.keys(fallbackPatch).length > 0) {
-            await ctx.runMutation(internal.businesses.updateInternal, {
-              businessId: business._id,
-              ...fallbackPatch,
-            });
+      // Poll until the run finishes (max 8 minutes)
+      const TERMINAL = new Set(["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"]);
+      const deadline = Date.now() + 8 * 60 * 1000;
+      let status = runData.data?.status ?? "";
+      while (!TERMINAL.has(status) && Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 5000));
+        try {
+          const statusResp = await fetch(
+            `https://api.apify.com/v2/acts/compass~crawler-google-places/runs/${runId}?token=${apifyKey}`,
+            { signal: AbortSignal.timeout(10000) },
+          );
+          if (statusResp.ok) {
+            const statusData = (await statusResp.json()) as { data?: { status?: string } };
+            status = statusData.data?.status ?? status;
           }
+        } catch {
+          // transient poll failure — keep waiting
         }
+      }
 
-        if (isFirstPage && (!data.reviews || data.reviews.length === 0)) {
-          break;
-        }
+      if (status !== "SUCCEEDED") {
+        throw new Error(`[fetch_google] Apify actor run ended with status: ${status}`);
+      }
 
-        for (const r of data.reviews ?? []) {
-          allReviews.push({
-            rating: Math.max(1, Math.min(5, Math.round(r.rating ?? 3))),
-            reviewerName: r.user?.name,
-            text: r.snippet,
-            reviewDate: r.iso_date ? new Date(r.iso_date).getTime() : Date.now(),
-          });
-        }
+      // Fetch dataset items (the actor returns one item per place URL)
+      const dataResp = await fetch(
+        `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyKey}&format=json`,
+        { signal: AbortSignal.timeout(30000) },
+      );
+      if (!dataResp.ok) {
+        throw new Error(`[fetch_google] Failed to fetch Apify dataset: ${dataResp.status}`);
+      }
 
-        nextPageToken = data.serpapi_pagination?.next_page_token;
-        isFirstPage = false;
-      } while (nextPageToken);
+      const items = (await dataResp.json()) as Array<{
+        website?: string;
+        address?: string;
+        phone?: string;
+        reviews?: Array<{
+          reviewId?: string;
+          name?: string;
+          stars?: number;
+          text?: string;
+          publishedAtDate?: string;
+        }>;
+      }>;
+
+      const place = items[0];
+      if (!place) break;
+
+      // Update business metadata from the scraped place
+      const patch: Record<string, string> = {};
+      if (place.website) patch.mapsWebsite = place.website;
+      if (place.address && !business.address) patch.address = place.address;
+      if (place.phone && !business.phone) patch.phone = place.phone;
+      if (Object.keys(patch).length > 0) {
+        await ctx.runMutation(internal.businesses.updateInternal, {
+          businessId: business._id,
+          ...patch,
+        });
+      }
+
+      const allReviews = (place.reviews ?? []).map((r) => ({
+        rating: Math.max(1, Math.min(5, Math.round(r.stars ?? 3))),
+        reviewerName: r.name,
+        text: r.text,
+        reviewDate: r.publishedAtDate ? new Date(r.publishedAtDate).getTime() : Date.now(),
+        externalId: r.reviewId ?? "",
+      }));
 
       await ctx.runMutation(internal.reviews.bulkImportInternal, {
         businessId: business._id,
         reviews: allReviews.map((r) => ({
           ...r,
+          externalId: r.externalId || contentFingerprint("google", r),
           source: "google" as const,
           isPublic: true as const,
-          externalId: contentFingerprint("google", r),
         })),
       });
       await ctx.runMutation(internal.reviews.deduplicateExisting, {
