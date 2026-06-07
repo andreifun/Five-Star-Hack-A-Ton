@@ -93,7 +93,18 @@ export const sendMessage = action({
       : null
     const sourceReviews = tipWorkspace?.sourceReviews ?? []
 
+    const businessTypeContext: Record<string, string> = {
+      hotel: "This is a hotel. Relevant topics: rooms, check-in/out, housekeeping, amenities (pool, gym, spa, breakfast), concierge, parking, noise.",
+      restaurant: "This is a restaurant. Relevant topics: food quality, menu variety, portion sizes, service speed, ambiance, reservations, pricing. No accommodation, pools, or hotel amenities.",
+      cafe: "This is a café. Relevant topics: coffee, drinks, pastries, light food, seating comfort, Wi-Fi, atmosphere, wait times. No accommodation, pools, full-service dining, or hotel amenities.",
+      bar: "This is a bar. Relevant topics: drinks, cocktails, beer/wine selection, bartender service, atmosphere, music, opening hours, pricing. No food menus beyond bar snacks, no accommodation, no pools or hotel amenities.",
+    }
+    const typeContext = businessTypeContext[businessWithMetrics.type] ?? `This is a ${businessWithMetrics.type}.`
+
     const systemPrompt = `You are an expert hospitality consultant and business intelligence assistant for ${businessWithMetrics.name}, a ${businessWithMetrics.type} business. You help the owner deeply understand customer feedback, identify trends, and take action.
+
+IMPORTANT — Business type context: ${typeContext}
+Only suggest improvements and ask questions relevant to this type of business. Never reference amenities or features that don't apply (e.g. do not mention pools, rooms, or check-in for a bar or café).
 
 Business Profile:
 - Name: ${businessWithMetrics.name}

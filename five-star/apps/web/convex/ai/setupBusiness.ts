@@ -59,6 +59,7 @@ export const run = internalAction({
     if (existingTasks.length === 0) {
       await ctx.runMutation(internal.setupTasks.createForBusiness, {
         businessId: args.businessId,
+        businessType: business.type,
         hasLocation: !!business.location,
         hasWebsite: !!business.website,
         hasGoogle: !!sl.google,
