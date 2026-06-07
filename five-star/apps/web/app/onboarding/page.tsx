@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { UserButton } from "@clerk/nextjs"
 import { AnimatePresence, motion } from "framer-motion"
 import { useAction, useMutation, useQuery } from "convex/react"
@@ -95,37 +95,31 @@ function OnboardingForm() {
   const [scrapeResult, setScrapeResult] = useState<ScrapeResult | null>(null)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [noResults, setNoResults] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSearchedQuery = useRef<string>("")
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  useEffect(() => {
-    if (selectedPlace) return
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+  async function handleSearch() {
     const query = form.name.trim()
-    if (query.length < 3) return
-    debounceRef.current = setTimeout(async () => {
-      setIsSearching(true)
-      setNoResults(false)
-      try {
-        const results = await getMapsOptions({ businessName: query })
-        setSuggestions(results)
-        setShowSuggestions(results.length > 0)
-        setNoResults(results.length === 0)
-      } catch {
-        setSuggestions([])
-        setShowSuggestions(false)
-        setNoResults(true)
-      } finally {
-        setIsSearching(false)
-      }
-    }, 600)
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (query.length < 3 || query === lastSearchedQuery.current) return
+    lastSearchedQuery.current = query
+    setIsSearching(true)
+    setNoResults(false)
+    try {
+      const results = await getMapsOptions({ businessName: query })
+      setSuggestions(results)
+      setShowSuggestions(results.length > 0)
+      setNoResults(results.length === 0)
+    } catch {
+      setSuggestions([])
+      setShowSuggestions(false)
+      setNoResults(true)
+    } finally {
+      setIsSearching(false)
     }
-  }, [form.name, getMapsOptions, selectedPlace])
+  }
 
   async function handlePlaceSelect(place: PlaceSuggestion) {
     setSelectedPlace(place)
@@ -152,6 +146,7 @@ function OnboardingForm() {
     setShowSuggestions(false)
     setNoResults(false)
     setScrapeResult(null)
+    lastSearchedQuery.current = ""
   }
 
   function move(next: number) {
@@ -265,6 +260,7 @@ function OnboardingForm() {
                     onClear={handleClearPlace}
                     onSuggestionsChange={setShowSuggestions}
                     onSelectedPlaceChange={setSelectedPlace}
+                    onSearch={handleSearch}
                   />
                 ) : step === 1 ? (
                   <StoryStep form={form} set={set} />
@@ -310,6 +306,7 @@ function BusinessStep({
   onClear,
   onSuggestionsChange,
   onSelectedPlaceChange,
+  onSearch,
 }: {
   form: FormState
   set: <K extends keyof FormState>(key: K, value: FormState[K]) => void
@@ -323,6 +320,7 @@ function BusinessStep({
   onClear: () => void
   onSuggestionsChange: (show: boolean) => void
   onSelectedPlaceChange: (place: PlaceSuggestion | null) => void
+  onSearch: () => void
 }) {
   return (
     <div className="space-y-6">
@@ -343,13 +341,32 @@ function BusinessStep({
               }
               set("name", event.target.value)
             }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                void onSearch()
+              }
+            }}
             onFocus={() => suggestions.length > 0 && !selectedPlace && onSuggestionsChange(true)}
             onBlur={() => window.setTimeout(() => onSuggestionsChange(false), 150)}
-            placeholder="Start typing your business name"
-            className="h-10 pr-10"
+            placeholder="Type your business name and press Search"
+            className="h-10 pr-20"
           />
-          {isSearching ? <Loader2 className="absolute right-3 top-3.5 size-4 animate-spin text-muted-foreground" /> : null}
-          {selectedPlace ? <button type="button" onClick={onClear} className="absolute right-3 top-3.5 text-muted-foreground"><X className="size-4" /></button> : null}
+          <div className="absolute right-2 top-1.5 flex items-center gap-1">
+            {selectedPlace ? (
+              <button type="button" onClick={onClear} className="rounded p-1 text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void onSearch()}
+                disabled={isSearching || form.name.trim().length < 3}
+                className="flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-xs font-medium text-primary-foreground disabled:opacity-40"
+              >
+                {isSearching ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
+                Search
+              </button>
+            )}
+          </div>
           {showSuggestions && suggestions.length > 0 ? (
             <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border bg-popover shadow-lg">
               <p className="border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Google Maps results</p>
