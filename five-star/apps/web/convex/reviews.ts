@@ -310,41 +310,59 @@ export const listByBusiness = query({
   handler: async (ctx, args) => {
     await requireBusinessOwner(ctx, args.businessId);
     if (args.source) {
-      return await ctx.db
+      const reviews = ctx.db
         .query("reviews")
         .withIndex("by_businessId_and_source_and_hasText_and_reviewDate", (q) => {
           const base = q.eq("businessId", args.businessId).eq("source", args.source!);
           return args.hasText !== undefined ? base.eq("hasText", args.hasText) : base;
         })
-        .order("desc")
-        .paginate(args.paginationOpts);
+        .order("desc");
+      const filteredReviews = args.sentiment
+        ? reviews.filter((q) => {
+            if (args.sentiment === "negative") {
+              return q.and(
+                q.gte(q.field("sentimentScore"), -10),
+                q.lte(q.field("sentimentScore"), -3),
+              );
+            }
+            if (args.sentiment === "neutral") {
+              return q.and(
+                q.gte(q.field("sentimentScore"), -2),
+                q.lte(q.field("sentimentScore"), 2),
+              );
+            }
+            return q.gt(q.field("sentimentScore"), 2);
+          })
+        : reviews;
+      return await filteredReviews.paginate(args.paginationOpts);
     }
-    if (args.sentiment) {
-      return await ctx.db
-        .query("reviews")
-        .withIndex("by_businessId_and_sentiment_and_hasText_and_reviewDate", (q) => {
-          const base = q.eq("businessId", args.businessId).eq("sentiment", args.sentiment!);
-          return args.hasText !== undefined ? base.eq("hasText", args.hasText) : base;
-        })
-        .order("desc")
-        .paginate(args.paginationOpts);
-    }
-    if (args.hasText !== undefined) {
-      return await ctx.db
-        .query("reviews")
-        .withIndex("by_businessId_and_hasText_and_reviewDate", (q) =>
-          q.eq("businessId", args.businessId).eq("hasText", args.hasText!),
-        )
-        .order("desc")
-        .paginate(args.paginationOpts);
-    }
-    return await ctx.db
+
+    const reviews = ctx.db
       .query("reviews")
       .withIndex("by_businessId_and_hasText_and_reviewDate", (q) =>
-        q.eq("businessId", args.businessId),
+        args.hasText !== undefined
+          ? q.eq("businessId", args.businessId).eq("hasText", args.hasText)
+          : q.eq("businessId", args.businessId),
       )
-      .order("desc")
-      .paginate(args.paginationOpts);
+      .order("desc");
+    const filteredReviews = args.sentiment
+      ? reviews.filter((q) => {
+          if (args.sentiment === "negative") {
+            return q.and(
+              q.gte(q.field("sentimentScore"), -10),
+              q.lte(q.field("sentimentScore"), -3),
+            );
+          }
+          if (args.sentiment === "neutral") {
+            return q.and(
+              q.gte(q.field("sentimentScore"), -2),
+              q.lte(q.field("sentimentScore"), 2),
+            );
+          }
+          return q.gt(q.field("sentimentScore"), 2);
+        })
+      : reviews;
+    return await filteredReviews.paginate(args.paginationOpts);
   },
 });
 

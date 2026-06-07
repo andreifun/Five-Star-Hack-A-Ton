@@ -63,6 +63,18 @@ export const listByBusiness = query({
   },
 })
 
+export const listAllByBusiness = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId)
+    return await ctx.db
+      .query("agentTodos")
+      .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+      .order("desc")
+      .take(500)
+  },
+})
+
 export const listByThread = query({
   args: { businessId: v.id("businesses"), threadId: v.id("chatThreads") },
   handler: async (ctx, args) => {

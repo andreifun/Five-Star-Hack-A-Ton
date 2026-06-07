@@ -2,15 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Lightbulb, MessageSquare, Star } from "lucide-react"
+import { LayoutDashboard, Star, ListTodo } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { useCurrentBusiness } from "@/components/business-context"
 
 const TABS = [
   { segment: "", label: "Dashboard", icon: LayoutDashboard },
   { segment: "reviews", label: "Reviews", icon: Star },
-  { segment: "tips", label: "Tips", icon: Lightbulb },
-  { segment: "chat", label: "Assistant", icon: MessageSquare },
+  { segment: "todos", label: "To Do", icon: ListTodo },
 ] as const
 
 export function BusinessNav({ mobile = false }: { mobile?: boolean }) {
@@ -38,7 +37,7 @@ export function BusinessNav({ mobile = false }: { mobile?: boolean }) {
               "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
               mobile && "flex-col gap-1 px-1 py-1.5 text-[10px]",
               isActive
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground"
                 : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
             )}
           >
