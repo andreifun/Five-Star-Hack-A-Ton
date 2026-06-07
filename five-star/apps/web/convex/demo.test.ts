@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { api } from "./_generated/api"
 import schema from "./schema"
 
@@ -15,16 +15,12 @@ const presenterIdentity = {
 async function seedTemplate() {
   const t = convexTest(schema, modules)
   const ids = await t.run(async (ctx) => {
-    const templateOwnerId = await ctx.db.insert("users", {
-      clerkId: "template-owner",
-      tokenIdentifier: "test|template-owner",
-    })
     const presenterId = await ctx.db.insert("users", {
       clerkId: "presenter",
       tokenIdentifier: presenterIdentity.tokenIdentifier,
     })
     const templateId = await ctx.db.insert("businesses", {
-      ownerId: templateOwnerId,
+      ownerId: presenterId,
       name: "Real Restaurant",
       type: "restaurant",
       description: "A real operating restaurant.",
@@ -76,23 +72,24 @@ async function seedTemplate() {
     })
     return { presenterId, reviewId, templateId }
   })
-  vi.stubEnv("DEMO_TEMPLATE_BUSINESS_ID", ids.templateId)
   return { t, presenter: t.withIdentity(presenterIdentity), ...ids }
 }
 
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {})
 
 describe("demo workspace", () => {
-  test("clones a configured real business into an isolated functional workspace", async () => {
+  test("lists non-demo businesses for selection", async () => {
+    const { presenter } = await seedTemplate()
+
+    const templates = await presenter.query(api.demo.listTemplates, {})
+    expect(templates).toHaveLength(1)
+    expect(templates[0]).toMatchObject({ name: "Real Restaurant", city: "Bucharest" })
+  })
+
+  test("clones a selected business into an isolated functional workspace", async () => {
     const { t, presenter, presenterId, reviewId, templateId } = await seedTemplate()
 
-    expect(await presenter.query(api.demo.getTemplatePreview, {})).toMatchObject({
-      status: "ready",
-      name: "Real Restaurant",
-      city: "Bucharest",
-    })
-
-    const businessId = await presenter.mutation(api.demo.prepare, {})
+    const businessId = await presenter.mutation(api.demo.prepare, { businessId: templateId })
     const result = await t.run(async (ctx) => {
       const business = await ctx.db.get(businessId)
       const reviews = await ctx.db.query("reviews").withIndex("by_businessId", (q) => q.eq("businessId", businessId)).collect()
@@ -114,7 +111,7 @@ describe("demo workspace", () => {
     expect(result.tips).toHaveLength(1)
     expect(result.tips[0]!.sourceReviewIds).toEqual([result.reviews[0]!._id])
     expect(result.tips[0]!.sourceReviewIds).not.toEqual([reviewId])
-    expect(result.tasks).toHaveLength(7)
+    expect(result.tasks).toHaveLength(5)
     expect(result.tasks.every((task) => task.status === "completed")).toBe(true)
     expect(result.threads).toHaveLength(0)
 
@@ -129,9 +126,9 @@ describe("demo workspace", () => {
   })
 
   test("resets the presenter's previous demo workspace", async () => {
-    const { t, presenter } = await seedTemplate()
-    const firstId = await presenter.mutation(api.demo.prepare, {})
-    const secondId = await presenter.mutation(api.demo.prepare, {})
+    const { t, presenter, templateId } = await seedTemplate()
+    const firstId = await presenter.mutation(api.demo.prepare, { businessId: templateId })
+    const secondId = await presenter.mutation(api.demo.prepare, { businessId: templateId })
 
     expect(secondId).not.toBe(firstId)
     const state = await t.run(async (ctx) => ({
@@ -142,13 +139,13 @@ describe("demo workspace", () => {
     expect(state.second?.isActive).toBe(true)
   })
 
-  test("returns an actionable preview error when demo mode is not configured", async () => {
-    const { presenter } = await seedTemplate()
-    vi.stubEnv("DEMO_TEMPLATE_BUSINESS_ID", "")
-    await expect(presenter.query(api.demo.getTemplatePreview, {})).resolves.toMatchObject({
-      status: "error",
-      message: expect.stringContaining("DEMO_TEMPLATE_BUSINESS_ID"),
-    })
-    await expect(presenter.mutation(api.demo.prepare, {})).rejects.toThrow("DEMO_TEMPLATE_BUSINESS_ID")
+  test("does not list demo businesses as selectable templates", async () => {
+    const { t, presenter, presenterId, templateId } = await seedTemplate()
+    await presenter.mutation(api.demo.prepare, { businessId: templateId })
+
+    const templates = await presenter.query(api.demo.listTemplates, {})
+    expect(templates.every((b) => !("isDemo" in b) || !(b as { isDemo?: boolean }).isDemo)).toBe(true)
+    expect(templates).toHaveLength(1)
+    expect(templates[0]!.name).toBe("Real Restaurant")
   })
 })

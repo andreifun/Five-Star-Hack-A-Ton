@@ -21,63 +21,38 @@ function omitFields<T extends object, K extends keyof T>(
   return copy;
 }
 
-function getTemplateId(ctx: { db: { normalizeId: (table: "businesses", id: string) => Id<"businesses"> | null } }) {
-  const configuredId = process.env.DEMO_TEMPLATE_BUSINESS_ID?.trim();
-  if (!configuredId) {
-    throw new Error(
-      "Demo mode is not configured. Set DEMO_TEMPLATE_BUSINESS_ID in the Convex environment.",
-    );
-  }
-  const templateId = ctx.db.normalizeId("businesses", configuredId);
-  if (!templateId) throw new Error("DEMO_TEMPLATE_BUSINESS_ID is not a valid business ID.");
-  return templateId;
-}
-
-export const getTemplatePreview = query({
+export const listTemplates = query({
   args: {},
   handler: async (ctx) => {
-    await requireCurrentUser(ctx);
-    let templateId: Id<"businesses">;
-    try {
-      templateId = getTemplateId(ctx);
-    } catch (error) {
-      return {
-        status: "error" as const,
-        message: error instanceof Error ? error.message : "Demo mode is not configured.",
-      };
-    }
-    const template = await ctx.db.get(templateId);
-    if (!template || !template.isActive) {
-      return {
-        status: "error" as const,
-        message: "The configured demo template business is missing or inactive.",
-      };
-    }
-    return {
-      status: "ready" as const,
-      name: template.name,
-      type: template.type,
-      description: template.description,
-      address: template.address,
-      city: template.city,
-      country: template.country,
-      website: template.website ?? template.mapsWebsite,
-      numberOfEmployees: template.numberOfEmployees,
-      location: template.location,
-      seasonality: template.seasonality,
-    };
+    const user = await requireCurrentUser(ctx);
+    const businesses = await ctx.db
+      .query("businesses")
+      .withIndex("by_ownerId_and_isActive", (q) =>
+        q.eq("ownerId", user._id).eq("isActive", true),
+      )
+      .collect();
+    return businesses
+      .filter((b) => !b.isDemo)
+      .map((b) => ({
+        _id: b._id,
+        name: b.name,
+        type: b.type,
+        city: b.city,
+        country: b.country,
+        address: b.address,
+      }));
   },
 });
 
 export const prepare = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-    const templateId = getTemplateId(ctx);
-    const template = await ctx.db.get(templateId);
+    const template = await ctx.db.get(args.businessId);
     if (!template || !template.isActive) {
-      throw new Error("The configured demo template business is missing or inactive.");
+      throw new Error("Selected business is missing or inactive.");
     }
+    const templateId = args.businessId;
 
     const previousBusinesses = await ctx.db
       .query("businesses")
