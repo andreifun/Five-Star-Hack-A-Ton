@@ -239,11 +239,12 @@ ${html.slice(0, 15000)}`,
           signal: AbortSignal.timeout(15000),
         });
         if (!resp.ok) {
-          const body = await resp.text();
-          throw new Error(`SerpAPI error: ${resp.status} ${body}`);
+          console.warn(`[fetch_google] SerpAPI reviews error ${resp.status} — skipping review import`);
+          break;
         }
 
         const data = (await resp.json()) as {
+          error?: string;
           reviews?: Array<{
             rating?: number;
             snippet?: string;
@@ -253,6 +254,11 @@ ${html.slice(0, 15000)}`,
           serpapi_pagination?: { next_page_token?: string };
           place_info?: { address?: string; phone?: string; website?: string };
         };
+
+        if (data.error) {
+          console.warn(`[fetch_google] SerpAPI reviews error — skipping review import:`, data.error);
+          break;
+        }
 
         // Fallback: if the place details call above didn't set mapsWebsite, try place_info here
         if (isFirstPage && data.place_info && !mapsWebsiteSet) {
@@ -269,7 +275,7 @@ ${html.slice(0, 15000)}`,
         }
 
         if (isFirstPage && (!data.reviews || data.reviews.length === 0)) {
-          throw new Error("No reviews found for this location");
+          break;
         }
 
         for (const r of data.reviews ?? []) {
