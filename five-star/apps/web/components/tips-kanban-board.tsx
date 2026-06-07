@@ -29,7 +29,7 @@ type DragState = {
   moved: boolean
 }
 
-const PRIORITY_ORDER: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
 
 export function TipsKanbanBoard({
   businessId,

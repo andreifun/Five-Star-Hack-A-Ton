@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { usePaginatedQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { useCurrentBusiness } from "@/components/business-context"
@@ -12,6 +12,14 @@ export default function DashboardPage() {
   const { businessId, business } = useCurrentBusiness()
   const [activeOnly, setActiveOnly] = useState(false)
   const tips = usePaginatedQuery(api.tips.listByBusiness, { businessId }, { initialNumItems: 100 })
+  const sortedTips = useMemo(() => {
+    const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
+    const pending = tips.results
+      .filter((t) => t.status === "pending")
+      .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3))
+    const others = tips.results.filter((t) => t.status !== "pending")
+    return [...pending, ...others]
+  }, [tips.results])
   if (!business || tips.status === "LoadingFirstPage") return <div className="flex flex-1 items-center justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
   return (
     <main className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
