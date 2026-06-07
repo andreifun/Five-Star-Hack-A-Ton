@@ -81,7 +81,9 @@ async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOpti
   if (!resp.ok) return [];
 
   const data = (await resp.json()) as Record<string, unknown>;
-  const localResults = data.local_results as Array<Record<string, unknown>> | undefined;
+  const localResults =
+    (data.local_results as Array<Record<string, unknown>> | undefined) ??
+    (data.places_results as Array<Record<string, unknown>> | undefined);
 
   console.log("[getMapsOptions] keys:", Object.keys(data));
   if (localResults?.length) {
@@ -94,6 +96,7 @@ async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOpti
     .filter((r) => r.title)
     .map((r) => {
       const name = String(r.title ?? "");
+      const address = String(r.address ?? "");
       const dataId = String(r.data_id ?? "");
       const placeId = String(r.place_id ?? "");
       const reviewsLink = String(r.reviews_link ?? "");
@@ -108,9 +111,12 @@ async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOpti
         mapsUrl = reviewsLink;
       } else if (placeIdSearch) {
         mapsUrl = placeIdSearch;
+      } else if (name) {
+        const q = address ? `${name} ${address}` : name;
+        mapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(q)}`;
       }
 
-      return { name, address: String(r.address ?? ""), mapsUrl, dataId };
+      return { name, address, mapsUrl, dataId };
     })
     .filter((r) => r.mapsUrl);
 }
