@@ -23,6 +23,6 @@ import { createGatewayProvider } from "@ai-sdk/gateway";
 const gateway = createGatewayProvider({ apiKey: process.env.AI_GATEWAY_API_KEY });
 ```
 
-Model IDs follow the `provider/model-name` convention (e.g. `anthropic/claude-sonnet-4-5`, `openai/gpt-4o`, `google/gemini-2.0-flash`). The default model for all AI features is `anthropic/claude-sonnet-4-5`.
+Model IDs follow the `provider/model-name` convention (e.g. `anthropic/claude-sonnet-4.6`, `openai/gpt-5.5`, `google/gemini-3.5-flash`). The default model for AI features that do not explicitly use MiniMax M3 is `anthropic/claude-sonnet-4.6`.
 
 All AI action functions accept an optional `model` argument so callers can swap the model at runtime without code changes. The `generatedByModel` / `model` fields on `tips` and `chatMessages` documents record which model was used for each generation.

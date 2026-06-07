@@ -44,11 +44,17 @@ export function TipsKanbanBoard({
   const updateStatus = useMutation(api.tips.updateStatus)
   const [tips, setTips] = useState(persistedTips)
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [startingTipId, setStartingTipId] = useState<Id<"tips"> | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const tipsRef = useRef(tips)
   const columnRefs = useRef<Map<Status, HTMLDivElement>>(new Map())
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const columns = activeOnly ? COLUMNS.slice(0, 2) : COLUMNS
+  const hasInProgressTips = tips.some((tip) => tip.status === "in_progress")
+  const columns = !hasInProgressTips
+    ? COLUMNS.slice(0, 1)
+    : activeOnly
+      ? COLUMNS.slice(0, 2)
+      : COLUMNS
   const activeDragId = drag?.tip._id
 
   useEffect(() => {
@@ -150,6 +156,25 @@ export function TipsKanbanBoard({
     return [...items].sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3))
   }
 
+  async function handleStart(tip: Tip) {
+    if (startingTipId) return
+    setStartingTipId(tip._id)
+    setTips((previous) =>
+      previous.map((item) =>
+        item._id === tip._id ? { ...item, status: "in_progress" } : item,
+      ),
+    )
+    try {
+      await updateStatus({ tipId: tip._id, status: "in_progress" })
+      router.push(`/businesses/${businessId}/tips/${tip._id}?start=1`)
+    } catch {
+      setTips((previous) =>
+        previous.map((item) => (item._id === tip._id ? tip : item)),
+      )
+      setStartingTipId(null)
+    }
+  }
+
   function getColumnItems(status: Status) {
     const columnTips = tips.filter((tip) => tip.status === status)
     const ordered = status === "pending" ? sortByPriority(columnTips) : columnTips
@@ -162,7 +187,7 @@ export function TipsKanbanBoard({
   const rotation = drag ? (drag.offsetX / drag.cardWidth - 0.5) * 8 : 0
 
   return (
-    <div className="flex h-[min(62vh,720px)] min-h-[420px] min-w-[760px] overflow-x-auto" style={{ userSelect: drag ? "none" : undefined }}>
+    <div className="flex min-h-0 w-full min-w-0 flex-1 overflow-x-auto" style={{ userSelect: drag ? "none" : undefined }}>
       {columns.map((status, index) => {
         const items = getColumnItems(status)
         const count = tips.filter((tip) => tip.status === status).length
@@ -197,7 +222,11 @@ export function TipsKanbanBoard({
                       onMouseDown={(event) => handleMouseDown(item.data, event)}
                       style={{ cursor: drag ? "grabbing" : "grab" }}
                     >
-                      <TipsKanbanCard tip={item.data} />
+                      <TipsKanbanCard
+                        tip={item.data}
+                        starting={startingTipId === item.data._id}
+                        onStart={() => void handleStart(item.data)}
+                      />
                     </motion.div>
                   ))}
                 </AnimatePresence>

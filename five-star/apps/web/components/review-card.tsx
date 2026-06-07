@@ -12,8 +12,14 @@ const RECENCY_BADGE: Record<
   "new" | "recent",
   { label: string; className: string }
 > = {
-  new: { label: "New", className: "bg-green-100 text-green-700 border-green-200" },
-  recent: { label: "Recent", className: "bg-blue-100 text-blue-700 border-blue-200" },
+  new: {
+    label: "New",
+    className: "bg-green-100 text-green-700 border-green-200",
+  },
+  recent: {
+    label: "Recent",
+    className: "bg-blue-100 text-blue-700 border-blue-200",
+  },
 }
 
 function positivityPillClass(score: number): string {
@@ -29,12 +35,14 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
 
   return (
     <div className="rounded-xl border p-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">
             {review.reviewerName ?? "Anonymous"}
             {review.isAngry && (
-              <span className="ml-1.5" title="Appears written in anger">😤</span>
+              <span className="ml-1.5" title="Appears written in anger">
+                😤
+              </span>
             )}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -51,10 +59,13 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {review.sentimentScore !== undefined && (
-            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums ${positivityPillClass(review.sentimentScore)}`}>
-              {review.sentimentScore >= 0 ? "+" : ""}{review.sentimentScore.toFixed(1)}
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums ${positivityPillClass(review.sentimentScore)}`}
+            >
+              {review.sentimentScore >= 0 ? "+" : ""}
+              {review.sentimentScore.toFixed(1)}
             </span>
           )}
           {review.sentiment && (
@@ -72,7 +83,9 @@ export function ReviewCard({ review }: { review: Doc<"reviews"> }) {
       {review.text?.trim() ? (
         <p className="mt-1 text-sm text-muted-foreground">{review.text}</p>
       ) : (
-        <p className="mt-1 text-xs italic text-muted-foreground/60">No review text</p>
+        <p className="mt-1 text-xs text-muted-foreground/60 italic">
+          No review text
+        </p>
       )}
 
       {review.ownerReply && (
