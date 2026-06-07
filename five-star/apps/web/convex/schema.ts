@@ -228,7 +228,6 @@ export default defineSchema({
       v.literal("fetch_google"),
       v.literal("fetch_tripadvisor"),
       v.literal("fetch_yelp"),
-      v.literal("fetch_booking"),
       v.literal("discover_products"),
       v.literal("generate_tips"),
       v.literal("finalize"),
