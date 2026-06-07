@@ -20,7 +20,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { getSerpApiKey } from "./ai/env";
+import { getSerpApiKey, getOptionalSerperApiKey } from "./ai/env";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -62,7 +62,9 @@ async function safelyFetchHtml(url: string): Promise<string> {
 
 // ─── SerpAPI — place search ───────────────────────────────────────────────────
 
-async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOption[]> {
+// Returns null on API-level failure (network error, HTTP error, or error body from SerpAPI).
+// Returns [] when the API worked but found no matching places.
+async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOption[] | null> {
   const params = new URLSearchParams({
     engine: "google_maps",
     type: "search",
@@ -76,20 +78,27 @@ async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOpti
       signal: AbortSignal.timeout(10000),
     });
   } catch {
-    return [];
+    return null;
   }
-  if (!resp.ok) return [];
+  if (!resp.ok) return null;
 
   const data = (await resp.json()) as Record<string, unknown>;
+
+  // SerpAPI signals credit exhaustion / errors via a top-level "error" field with a 200 status.
+  if (data.error) {
+    console.warn("[getMapsOptions] SerpAPI error:", data.error);
+    return null;
+  }
+
   const localResults =
     (data.local_results as Array<Record<string, unknown>> | undefined) ??
     (data.places_results as Array<Record<string, unknown>> | undefined);
 
-  console.log("[getMapsOptions] keys:", Object.keys(data));
+  console.log("[getMapsOptions] serpapi keys:", Object.keys(data));
   if (localResults?.length) {
-    console.log("[getMapsOptions] first result:", JSON.stringify(localResults[0]));
+    console.log("[getMapsOptions] serpapi first result:", JSON.stringify(localResults[0]));
   } else {
-    console.log("[getMapsOptions] no local_results, full response:", JSON.stringify(data).slice(0, 500));
+    console.log("[getMapsOptions] serpapi no results, full response:", JSON.stringify(data).slice(0, 500));
   }
 
   return (localResults ?? []).slice(0, 3)
@@ -117,6 +126,53 @@ async function serpSearchPlaces(query: string, apiKey: string): Promise<MapsOpti
       }
 
       return { name, address, mapsUrl, dataId };
+    })
+    .filter((r) => r.mapsUrl);
+}
+
+// ─── Serper.dev — place search (fallback) ─────────────────────────────────────
+
+async function serperSearchPlaces(query: string, apiKey: string): Promise<MapsOption[]> {
+  let resp: Response;
+  try {
+    resp = await fetch("https://google.serper.dev/maps", {
+      method: "POST",
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: query }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return [];
+  }
+  if (!resp.ok) return [];
+
+  const data = (await resp.json()) as Record<string, unknown>;
+  const places = data.places as Array<Record<string, unknown>> | undefined;
+
+  console.log("[getMapsOptions] serper keys:", Object.keys(data));
+  if (places?.length) {
+    console.log("[getMapsOptions] serper first result:", JSON.stringify(places[0]));
+  }
+
+  return (places ?? []).slice(0, 3)
+    .filter((r) => r.title)
+    .map((r) => {
+      const name = String(r.title ?? "");
+      const address = String(r.address ?? "");
+      const cid = String(r.cid ?? "");
+      const placeId = String(r.placeId ?? "");
+
+      let mapsUrl = "";
+      if (cid) {
+        mapsUrl = `https://www.google.com/maps?cid=${cid}`;
+      } else if (placeId) {
+        mapsUrl = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+      } else if (name) {
+        const q = address ? `${name} ${address}` : name;
+        mapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(q)}`;
+      }
+
+      return { name, address, mapsUrl, dataId: "" };
     })
     .filter((r) => r.mapsUrl);
 }
@@ -293,7 +349,13 @@ export const getMapsOptions = action({
     args,
   ): Promise<Array<{ name: string; address: string; mapsUrl: string; dataId: string }>> => {
     const apiKey = getSerpApiKey(); // throws if not set — surfaces in Convex dashboard logs
-    return serpSearchPlaces(args.businessName.trim(), apiKey);
+    const results = await serpSearchPlaces(args.businessName.trim(), apiKey);
+    // null = API-level failure (credits exhausted, HTTP error, error body) → try Serper fallback
+    // []   = API worked but no matching places → return empty, don't fall back
+    if (results !== null) return results;
+    const serperKey = getOptionalSerperApiKey();
+    if (!serperKey) return [];
+    return serperSearchPlaces(args.businessName.trim(), serperKey);
   },
 });
 
