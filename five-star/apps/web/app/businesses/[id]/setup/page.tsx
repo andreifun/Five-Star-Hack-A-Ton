@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { UserButton } from "@clerk/nextjs"
 import { motion } from "framer-motion"
 import { useMutation, useQuery } from "convex/react"
@@ -59,19 +59,56 @@ function SetupPageContent() {
   const overview = useQuery(api.setupTasks.getOverview, { businessId })
   const retrySetup = useMutation(api.businesses.retrySetup)
   const [retrying, setRetrying] = useState(false)
+  const [animatedCount, setAnimatedCount] = useState<number | null>(null)
+  const animationStarted = useRef(false)
+
+  // When all tasks arrive already completed (demo), fake-reveal them one by one
+  useEffect(() => {
+    if (!overview || animationStarted.current) return
+    const actionable = overview.tasks.filter((t) => t.status !== "skipped")
+    if (actionable.length > 0 && actionable.every((t) => t.status === "completed")) {
+      animationStarted.current = true
+      setAnimatedCount(0)
+    }
+  }, [overview])
+
+  // Tick: 2–3 seconds per task
+  useEffect(() => {
+    if (animatedCount === null) return
+    const actionable = (overview?.tasks ?? []).filter((t) => t.status !== "skipped")
+    if (animatedCount >= actionable.length) return
+    const timer = window.setTimeout(
+      () => setAnimatedCount((c) => (c ?? 0) + 1),
+      2000 + Math.random() * 1000,
+    )
+    return () => window.clearTimeout(timer)
+  }, [animatedCount, overview])
 
   const state = useMemo(() => {
     const tasks = overview?.tasks ?? []
     const actionable = tasks.filter((task) => task.status !== "skipped")
-    const settled = actionable.filter((task) => task.status === "completed" || task.status === "failed")
     const failed = tasks.filter((task) => task.status === "failed")
+
+    if (animatedCount !== null) {
+      const done = Math.min(animatedCount, actionable.length)
+      return {
+        tasks,
+        failed: [],
+        complete: done >= actionable.length,
+        percent: actionable.length > 0 ? Math.round((done / actionable.length) * 100) : 0,
+        completedCount: done,
+      }
+    }
+
+    const settled = actionable.filter((task) => task.status === "completed" || task.status === "failed")
     return {
       tasks,
       failed,
       complete: tasks.length > 0 && tasks.every((task) => task.status !== "pending" && task.status !== "running"),
       percent: actionable.length > 0 ? Math.round((settled.length / actionable.length) * 100) : 0,
+      completedCount: tasks.filter((t) => t.status === "completed").length,
     }
-  }, [overview])
+  }, [overview, animatedCount])
 
   const successful = state.complete && state.failed.length === 0
 
@@ -126,7 +163,7 @@ function SetupPageContent() {
           <div className="rounded-2xl bg-card p-5 shadow-md ring-1 ring-foreground/10">
             <div className="flex items-end justify-between gap-4">
               <div><p className="text-xs font-medium text-muted-foreground">Workspace progress</p><p className="mt-1 text-2xl font-semibold"><AnimatedNumber value={state.percent} />%</p></div>
-              <p className="text-right text-xs leading-relaxed text-muted-foreground">{state.tasks.filter((task) => task.status === "completed").length} completed<br />{state.tasks.filter((task) => task.status === "skipped").length} skipped</p>
+              <p className="text-right text-xs leading-relaxed text-muted-foreground">{state.completedCount} completed<br />{state.tasks.filter((task) => task.status === "skipped").length} skipped</p>
             </div>
             <Progress value={state.percent} className="mt-5 h-1.5 bg-muted [&_[data-slot=progress-indicator]]:bg-primary" />
           </div>
@@ -155,7 +192,19 @@ function SetupPageContent() {
                   <ListChecks className="size-5 text-muted-foreground/70" />
                 </div>
                 <div className="mt-6 space-y-1">
-                  {state.tasks.map((task) => <TaskRow key={task._id} task={task} />)}
+                  {(() => {
+                    let actionableIndex = 0
+                    return state.tasks.map((task) => {
+                      let displayStatus = task.status
+                      if (animatedCount !== null && task.status !== "skipped") {
+                        const idx = actionableIndex++
+                        if (idx < animatedCount) displayStatus = "completed"
+                        else if (idx === animatedCount) displayStatus = "running"
+                        else displayStatus = "pending"
+                      }
+                      return <TaskRow key={task._id} task={task} displayStatus={displayStatus} />
+                    })
+                  })()}
                 </div>
                 {state.complete ? (
                   <div className="mt-6 flex flex-col gap-2 border-t border-border pt-5 sm:flex-row">
@@ -185,7 +234,7 @@ function DiscoveryWidget({ icon: Icon, label, value, children }: { icon: typeof 
   )
 }
 
-function TaskRow({ task }: { task: Doc<"setupTasks"> }) {
+function TaskRow({ task, displayStatus }: { task: Doc<"setupTasks">; displayStatus: TaskStatus }) {
   const icons: Record<TaskStatus, React.ReactNode> = {
     pending: <CircleDashed className="size-4 text-muted-foreground/60" />,
     running: <Loader2 className="size-4 animate-spin text-primary" />,
@@ -194,10 +243,10 @@ function TaskRow({ task }: { task: Doc<"setupTasks"> }) {
     skipped: <CircleDashed className="size-4 text-muted-foreground/50" />,
   }
   return (
-    <motion.div layout animate={{ opacity: task.status === "pending" || task.status === "skipped" ? 0.4 : 1 }} className="flex items-start gap-3 rounded-xl px-2 py-2.5">
-      <span className="mt-0.5">{icons[task.status]}</span>
-      <div className="min-w-0 flex-1"><p className="text-sm font-medium">{task.label}</p>{task.message ? <p className="mt-0.5 truncate text-xs text-red-600/70">{task.message}</p> : null}</div>
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{task.status === "completed" ? "Done" : task.status}</span>
+    <motion.div layout animate={{ opacity: displayStatus === "pending" || displayStatus === "skipped" ? 0.4 : 1 }} className="flex items-start gap-3 rounded-xl px-2 py-2.5">
+      <span className="mt-0.5">{icons[displayStatus]}</span>
+      <div className="min-w-0 flex-1"><p className="text-sm font-medium">{task.label}</p>{task.message && displayStatus === "failed" ? <p className="mt-0.5 truncate text-xs text-red-600/70">{task.message}</p> : null}</div>
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{displayStatus === "completed" ? "Done" : displayStatus}</span>
     </motion.div>
   )
 }

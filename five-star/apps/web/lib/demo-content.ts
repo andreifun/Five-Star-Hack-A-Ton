@@ -1,40 +1,25 @@
-import { BarChart3, Lightbulb, MessageSquareText, ScanSearch } from "lucide-react"
+import { Clock, LayoutList, ScanSearch } from "lucide-react"
 
 export const DEMO_SLIDES = [
   {
-    eyebrow: "The signal is already there",
-    title: "Every review contains a decision waiting to happen.",
+    eyebrow: "The reality",
+    title: "Reviews pile up. There's never a good time.",
     description:
-      "Hospitality teams collect hundreds of opinions across platforms, but the useful patterns stay buried in scattered comments and star ratings.",
-    metric: "73%",
-    metricLabel: "of customer feedback goes unactioned",
+      "Every week you mean to go through the feedback. Something more urgent comes up. The reviews stay unread — and the same issues keep showing up.",
+    icon: Clock,
+  },
+  {
+    eyebrow: "The fix",
+    title: "We organize it. You decide what to act on.",
+    description:
+      "Five Star pulls your reviews together, finds the patterns, and shows you what guests are consistently saying — so you can deal with it in one focused session.",
     icon: ScanSearch,
   },
   {
-    eyebrow: "From noise to priorities",
-    title: "Five Star turns feedback into a live operating plan.",
+    eyebrow: "What you get",
+    title: "Your reviews, organized into what to do next.",
     description:
-      "Reviews become measurable themes, prioritized improvements, and clear next actions the whole team can move forward.",
-    metric: "1 view",
-    metricLabel: "from review signal to execution",
-    icon: Lightbulb,
-  },
-  {
-    eyebrow: "An assistant that knows the business",
-    title: "Investigate, decide, and execute without losing context.",
-    description:
-      "Open any opportunity and the assistant can inspect evidence, research solutions, build tasks, and prepare communications.",
-    metric: "24/7",
-    metricLabel: "business intelligence on demand",
-    icon: MessageSquareText,
+      "Themes, patterns, and priorities — pulled from every source into one workspace. Spend ten minutes, leave with a clear list.",
+    icon: LayoutList,
   },
 ] as const
-
-export const DEMO_SETUP_STEPS = [
-  { label: "Connecting review sources", icon: ScanSearch },
-  { label: "Mapping customer sentiment", icon: BarChart3 },
-  { label: "Prioritizing opportunities", icon: Lightbulb },
-  { label: "Preparing your AI workspace", icon: MessageSquareText },
-] as const
-
-export const DEMO_SETUP_STEP_MS = 1400

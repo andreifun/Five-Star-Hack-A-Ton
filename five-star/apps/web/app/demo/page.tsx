@@ -1,121 +1,350 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useMutation, useQuery } from "convex/react"
-import { useRouter } from "next/navigation"
+import { useState } from "react"
+import { UserButton } from "@clerk/nextjs"
 import { AnimatePresence, motion } from "framer-motion"
-import { Check, ChevronLeft, ChevronRight, Loader2, MapPin, Sparkles } from "lucide-react"
+import { useMutation, useQuery } from "convex/react"
+import {
+  ArrowLeft,
+  ArrowRight,
+  Building2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  MapPin,
+  Search,
+  Sparkles,
+  Users,
+} from "lucide-react"
+import { useRouter } from "next/navigation"
 import { api } from "@/convex/_generated/api"
 import { AuthGate, FullScreenLoader } from "@/components/auth-gate"
 import { Logo } from "@/components/logo"
-import { DEMO_SETUP_STEP_MS, DEMO_SETUP_STEPS, DEMO_SLIDES } from "@/lib/demo-content"
 import { Button } from "@workspace/ui/components/button"
-import { Card, CardContent } from "@workspace/ui/components/card"
-import { Progress } from "@workspace/ui/components/progress"
+import { Input } from "@workspace/ui/components/input"
+import { Label } from "@workspace/ui/components/label"
+import { RadioGroup, RadioGroupItem } from "@workspace/ui/components/radio-group"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select"
+import { Textarea } from "@workspace/ui/components/textarea"
+import { DEMO_SLIDES } from "@/lib/demo-content"
 
-type Phase = "slides" | "confirm" | "setup"
+const BUSINESS_TYPES = [
+  { value: "restaurant", label: "Restaurant" },
+  { value: "hotel", label: "Hotel" },
+  { value: "cafe", label: "Cafe" },
+  { value: "bar", label: "Bar" },
+] as const
 
-function DemoExperience() {
+const TURNOVER_RANGES = [
+  { value: "under_100k", label: "Under 100,000 RON" },
+  { value: "100k_500k", label: "100,000 - 500,000 RON" },
+  { value: "500k_1m", label: "500,000 - 1,000,000 RON" },
+  { value: "1m_5m", label: "1,000,000 - 5,000,000 RON" },
+  { value: "5m_10m", label: "5,000,000 - 10,000,000 RON" },
+  { value: "over_10m", label: "Over 10,000,000 RON" },
+] as const
+
+type BusinessType = (typeof BUSINESS_TYPES)[number]["value"]
+type TurnoverRange = (typeof TURNOVER_RANGES)[number]["value"]
+type Seasonality = "all_year" | "seasonal"
+
+interface FormState {
+  name: string
+  type: BusinessType | ""
+  description: string
+  numberOfEmployees: string
+  location: string
+  seasonality: Seasonality | ""
+  turnover: TurnoverRange | ""
+}
+
+const STEPS = [
+  { label: "Business", title: "Your demo business", description: "Your workspace is pre-loaded with a real hospitality business. Review the details and continue.", icon: Search },
+  { label: "Story", title: "Tell us about it", description: "A little context helps Five Star understand what makes the business distinct.", icon: Building2 },
+  { label: "Operations", title: "Add the finishing details", description: "These details are optional, but they sharpen the recommendations we prepare.", icon: Users },
+] as const
+
+type ReadyPreview = Extract<
+  NonNullable<ReturnType<typeof useQuery<typeof api.demo.getTemplatePreview>>>,
+  { status: "ready" }
+>
+
+function DemoForm({ preview, onBack }: { preview: ReadyPreview; onBack: () => void }) {
   const router = useRouter()
-  const preview = useQuery(api.demo.getTemplatePreview)
   const prepare = useMutation(api.demo.prepare)
-  const [phase, setPhase] = useState<Phase>("slides")
-  const [slide, setSlide] = useState(0)
-  const [completedSteps, setCompletedSteps] = useState(0)
-  const [businessId, setBusinessId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [isPreparing, setIsPreparing] = useState(false)
+  const [step, setStep] = useState(0)
+  const [direction, setDirection] = useState(1)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [form, setForm] = useState<FormState>({
+    name: preview.name ?? "",
+    type: BUSINESS_TYPES.some((t) => t.value === preview.type) ? (preview.type as BusinessType) : "",
+    description: preview.description ?? "",
+    numberOfEmployees: preview.numberOfEmployees != null ? String(preview.numberOfEmployees) : "",
+    location: preview.location ?? "",
+    seasonality: preview.seasonality ?? "",
+    turnover: "",
+  })
 
-  useEffect(() => {
-    if (phase !== "setup" || !isPreparing) return
-    const timers = DEMO_SETUP_STEPS.map((_, index) =>
-      window.setTimeout(() => setCompletedSteps(index + 1), DEMO_SETUP_STEP_MS * (index + 1)),
-    )
-    return () => timers.forEach(window.clearTimeout)
-  }, [isPreparing, phase])
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
 
-  useEffect(() => {
-    if (phase !== "setup" || completedSteps !== DEMO_SETUP_STEPS.length || !businessId) return
-    const timer = window.setTimeout(() => router.push(`/businesses/${businessId}`), 500)
-    return () => window.clearTimeout(timer)
-  }, [businessId, completedSteps, phase, router])
+  function move(next: number) {
+    setSubmitError(null)
+    setDirection(next > step ? 1 : -1)
+    setStep(next)
+  }
 
-  async function startDemo() {
-    setError(null)
-    setCompletedSteps(0)
-    setBusinessId(null)
-    setIsPreparing(true)
-    setPhase("setup")
+  async function handleSubmit() {
+    setIsSubmitting(true)
+    setSubmitError(null)
     try {
-      setBusinessId(await prepare())
-    } catch (caught) {
-      setIsPreparing(false)
-      setCompletedSteps(0)
-      setError(caught instanceof Error ? caught.message : "The demo workspace could not be prepared.")
+      const id = await prepare()
+      router.push(`/businesses/${id}/setup`)
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Something went wrong. Please try again.")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  if (preview === undefined) return <FullScreenLoader />
-  if (preview.status === "error") {
-    return <DemoError message={preview.message} onBack={() => router.push("/")} />
-  }
+  const canContinue = step !== 0 || (form.name.trim().length > 0 && form.type !== "")
+  const progress = ((step + 1) / STEPS.length) * 100
+  const activeStep = STEPS[step]!
+  const addressLine = [preview.address, preview.city, preview.country].filter(Boolean).join(", ")
+  const turnoverLabel = TURNOVER_RANGES.find((r) => r.value === form.turnover)?.label ?? null
 
   return (
-    <main className="relative min-h-svh overflow-hidden bg-[#f4f0e8] text-[#171712]">
-      <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(#171712_0.7px,transparent_0.7px)] [background-size:18px_18px]" />
-      <div className="absolute -right-40 -top-48 size-[34rem] rounded-full bg-[#ff5b35]/20 blur-3xl" />
-      <div className="absolute -bottom-56 -left-32 size-[38rem] rounded-full bg-[#b5d9c4]/60 blur-3xl" />
-
-      <header className="relative z-10 flex items-center justify-between px-6 py-5 md:px-10">
-        <Logo className="h-7" />
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-black/45">
-          <span className="size-2 rounded-full bg-[#ff5b35]" />
-          Live demo
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="mx-auto grid w-full max-w-5xl gap-8 py-8 md:grid-cols-[0.65fr_1.35fr] md:items-center"
+    >
+      <aside className="self-start md:self-center">
+        <p className="text-xs font-medium text-muted-foreground">Live demo</p>
+        <h1 className="mt-2 max-w-md text-2xl font-semibold tracking-tight">A clearer picture starts here.</h1>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+          We will connect the signal around your business and turn it into a workspace your team can act on.
+        </p>
+        <div className="mt-6 hidden max-w-sm space-y-2 md:block">
+          {STEPS.map((item, index) => {
+            const Icon = item.icon
+            const complete = index < step
+            const active = index === step
+            return (
+              <button key={item.label} type="button" onClick={() => index < step && move(index)} className="flex w-full items-center gap-3 text-left">
+                <span className={`flex size-8 items-center justify-center rounded-full transition-colors ${complete ? "bg-secondary text-secondary-foreground" : active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                  {complete ? <Check className="size-4" /> : <Icon className="size-4" />}
+                </span>
+                <span className={active || complete ? "text-sm font-medium" : "text-sm text-muted-foreground/70"}>{item.label}</span>
+              </button>
+            )
+          })}
         </div>
-      </header>
+      </aside>
 
-      <div className="relative z-10 mx-auto flex min-h-[calc(100svh-76px)] max-w-6xl items-center px-6 pb-10 md:px-10">
-        <AnimatePresence mode="wait">
-          {phase === "slides" ? (
-            <PitchSlides
-              key="slides"
-              slide={slide}
-              onBack={() => setSlide((value) => Math.max(0, value - 1))}
-              onNext={() => {
-                if (slide === DEMO_SLIDES.length - 1) setPhase("confirm")
-                else setSlide((value) => value + 1)
-              }}
-            />
-          ) : phase === "confirm" ? (
-            <ConfirmBusiness
-              key="confirm"
-              preview={preview}
-              onBack={() => setPhase("slides")}
-              onStart={() => void startDemo()}
-            />
-          ) : (
-            <SetupBusiness
-              key="setup"
-              completedSteps={completedSteps}
-              error={error}
-              onRetry={() => void startDemo()}
-            />
-          )}
-        </AnimatePresence>
-      </div>
-    </main>
+      <section className="self-center overflow-hidden rounded-2xl bg-card shadow-md ring-1 ring-foreground/10">
+        <div className="h-1 bg-muted">
+          <motion.div className="h-full bg-primary" animate={{ width: `${progress}%` }} />
+        </div>
+        <div className="p-5 md:p-7">
+          <div className="mb-7">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Step {step + 1} of {STEPS.length}</p>
+              {step > 0 ? <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">Optional</span> : null}
+            </div>
+            <h2 className="mt-2 text-xl font-semibold">{activeStep.title}</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">{activeStep.description}</p>
+          </div>
+
+          <AnimatePresence mode="wait" custom={direction}>
+            <motion.div
+              key={step}
+              custom={direction}
+              initial={{ opacity: 0, x: direction * 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: direction * -24 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              {step === 0 ? (
+                <BusinessStep form={form} set={set} addressLine={addressLine} />
+              ) : step === 1 ? (
+                <StoryStep form={form} set={set} />
+              ) : (
+                <OperationsStep form={form} set={set} turnoverLabel={turnoverLabel} />
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          {submitError ? (
+            <p className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</p>
+          ) : null}
+
+          <div className="mt-8 flex items-center justify-between gap-3">
+            <Button variant="ghost" onClick={() => step === 0 ? onBack() : move(step - 1)} disabled={isSubmitting} className="rounded-full text-muted-foreground hover:bg-muted">
+              <ArrowLeft className="size-4" /> Back
+            </Button>
+            {step < STEPS.length - 1 ? (
+              <Button onClick={() => move(step + 1)} disabled={!canContinue} className="px-5">
+                Continue <ArrowRight className="size-4" />
+              </Button>
+            ) : (
+              <Button onClick={() => void handleSubmit()} disabled={isSubmitting} className="px-5">
+                {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                {isSubmitting ? "Creating workspace..." : "Create workspace"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </section>
+    </motion.div>
   )
 }
 
-function PitchSlides({
-  slide,
-  onBack,
-  onNext,
+function BusinessStep({
+  form,
+  set,
+  addressLine,
 }: {
-  slide: number
-  onBack: () => void
-  onNext: () => void
+  form: FormState
+  set: <K extends keyof FormState>(key: K, value: FormState[K]) => void
+  addressLine: string
 }) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Label htmlFor="name" className="text-foreground">Business name *</Label>
+        <Input
+          id="name"
+          value={form.name}
+          onChange={(event) => set("name", event.target.value)}
+          placeholder="Business name"
+          className="h-10"
+        />
+        {addressLine ? (
+          <div className="flex items-center gap-3 rounded-xl bg-muted px-4 py-3">
+            <MapPin className="size-4 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{form.name}</p>
+              <p className="truncate text-xs text-muted-foreground">{addressLine}</p>
+            </div>
+            <Check className="size-4" />
+          </div>
+        ) : null}
+      </div>
+      <div className="space-y-2">
+        <Label className="text-foreground">Business type *</Label>
+        <RadioGroup value={form.type} onValueChange={(value) => set("type", value as BusinessType)} className="grid grid-cols-2 gap-2">
+          {BUSINESS_TYPES.map((type) => (
+            <Label key={type.value} htmlFor={type.value} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 font-normal transition-colors ${form.type === type.value ? "border-primary bg-primary/10" : "hover:bg-accent"}`}>
+              <RadioGroupItem value={type.value} id={type.value} /> {type.label}
+            </Label>
+          ))}
+        </RadioGroup>
+      </div>
+    </div>
+  )
+}
+
+function StoryStep({
+  form,
+  set,
+}: {
+  form: FormState
+  set: <K extends keyof FormState>(key: K, value: FormState[K]) => void
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Label htmlFor="description" className="text-foreground">Business description</Label>
+        <Textarea
+          id="description"
+          value={form.description}
+          onChange={(event) => set("description", event.target.value)}
+          placeholder="What should we know about the experience you offer?"
+          rows={6}
+          className="resize-none"
+        />
+        <p className="text-xs text-muted-foreground">A sentence or two is enough. Public details may also be discovered during setup.</p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="location" className="text-foreground">Location context</Label>
+        <Input
+          id="location"
+          value={form.location}
+          onChange={(event) => set("location", event.target.value)}
+          placeholder="e.g. central Bucharest, rural Transylvania"
+        />
+        <p className="text-xs text-muted-foreground">We use this to understand local and seasonal operating patterns.</p>
+      </div>
+    </div>
+  )
+}
+
+function OperationsStep({
+  form,
+  set,
+  turnoverLabel,
+}: {
+  form: FormState
+  set: <K extends keyof FormState>(key: K, value: FormState[K]) => void
+  turnoverLabel: string | null
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="employees" className="text-foreground">Employees</Label>
+          <Input id="employees" type="number" min={0} value={form.numberOfEmployees} onChange={(event) => set("numberOfEmployees", event.target.value)} placeholder="e.g. 12" />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-foreground">Operation period</Label>
+          <Select value={form.seasonality} onValueChange={(value) => set("seasonality", value as Seasonality)}>
+            <SelectTrigger><SelectValue placeholder="Select period" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all_year">All year</SelectItem>
+              <SelectItem value="seasonal">Seasonal</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-foreground">Annual turnover</Label>
+        <Select value={form.turnover} onValueChange={(value) => set("turnover", value as TurnoverRange)}>
+          <SelectTrigger><SelectValue placeholder="Select turnover range" /></SelectTrigger>
+          <SelectContent>
+            {TURNOVER_RANGES.map((range) => (
+              <SelectItem key={range.value} value={range.value}>{range.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="rounded-2xl bg-muted/60 p-5 ring-1 ring-foreground/10">
+        <p className="text-xs font-medium text-muted-foreground">Workspace summary</p>
+        <div className="mt-3 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-lg font-semibold">{form.name || "Your business"}</p>
+            <p className="mt-1 text-xs capitalize text-muted-foreground">{form.type || "Business type not selected"}</p>
+          </div>
+          <span className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Sparkles className="size-4" />
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+          <span>Google profile connected</span>
+          <span>Reviews pre-imported</span>
+          <span>{form.numberOfEmployees ? `${form.numberOfEmployees} employees` : "Team size not provided"}</span>
+          <span>{turnoverLabel ?? "Turnover not provided"}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PitchSlides({ slide, onBack, onNext }: { slide: number; onBack: () => void; onNext: () => void }) {
   const content = DEMO_SLIDES[slide]!
   const Icon = content.icon
   return (
@@ -123,163 +352,109 @@ function PitchSlides({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, y: -12 }}
-      className="grid w-full gap-12 md:grid-cols-[1.25fr_0.75fr] md:items-end"
+      className="w-full max-w-3xl"
     >
-      <div>
-        <div className="mb-10 flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-full border border-black/15 bg-white/50">
-            <Icon className="size-4" />
-          </div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-black/45">{content.eyebrow}</p>
+      <div className="mb-10 flex items-center gap-3">
+        <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+          <Icon className="size-4 text-muted-foreground" />
         </div>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={slide}
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -18 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
-          >
-            <h1 className="max-w-4xl text-balance text-5xl font-semibold leading-[0.98] tracking-[-0.055em] md:text-7xl">
-              {content.title}
-            </h1>
-            <p className="mt-7 max-w-2xl text-lg leading-relaxed text-black/55">{content.description}</p>
-          </motion.div>
-        </AnimatePresence>
-        <div className="mt-12 flex items-center gap-3">
-          <Button variant="outline" size="icon" onClick={onBack} disabled={slide === 0} className="rounded-full border-black/15 bg-white/40">
-            <ChevronLeft className="size-4" />
-          </Button>
-          <Button onClick={onNext} className="rounded-full bg-[#171712] px-6 text-[#f4f0e8] hover:bg-black">
-            {slide === DEMO_SLIDES.length - 1 ? "See it in action" : "Continue"}
-            <ChevronRight className="ml-2 size-4" />
-          </Button>
-          <div className="ml-3 flex gap-1.5">
-            {DEMO_SLIDES.map((_, index) => (
-              <span key={index} className={`h-1.5 rounded-full transition-all ${index === slide ? "w-8 bg-[#ff5b35]" : "w-1.5 bg-black/15"}`} />
-            ))}
-          </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">{content.eyebrow}</p>
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={slide}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -18 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+        >
+          <h1 className="text-balance text-5xl font-semibold leading-[0.98] tracking-[-0.04em] md:text-6xl">
+            {content.title}
+          </h1>
+          <p className="mt-7 max-w-xl text-lg leading-relaxed text-muted-foreground">{content.description}</p>
+        </motion.div>
+      </AnimatePresence>
+      <div className="mt-12 flex items-center gap-3">
+        <Button variant="outline" size="icon" onClick={onBack} disabled={slide === 0} className="rounded-full">
+          <ChevronLeft className="size-4" />
+        </Button>
+        <Button onClick={onNext} className="rounded-full px-6">
+          {slide === DEMO_SLIDES.length - 1 ? "See it in action" : "Continue"}
+          <ChevronRight className="ml-2 size-4" />
+        </Button>
+        <div className="ml-3 flex gap-1.5">
+          {DEMO_SLIDES.map((_, index) => (
+            <span key={index} className={`h-1.5 rounded-full transition-all ${index === slide ? "w-8 bg-primary" : "w-1.5 bg-muted-foreground/30"}`} />
+          ))}
         </div>
       </div>
-      <motion.div
-        key={`metric-${slide}`}
-        initial={{ opacity: 0, scale: 0.92, rotate: 3 }}
-        animate={{ opacity: 1, scale: 1, rotate: -2 }}
-        className="relative justify-self-end rounded-[2rem] border border-black/10 bg-[#ff5b35] p-8 shadow-[0_30px_80px_rgba(23,23,18,0.18)] md:p-10"
-      >
-        <div className="absolute -right-3 -top-3 size-8 rounded-full border border-black/15 bg-[#f4f0e8]" />
-        <p className="text-7xl font-semibold tracking-[-0.08em] text-[#171712] md:text-8xl">{content.metric}</p>
-        <p className="mt-5 max-w-48 text-sm font-medium leading-snug text-black/60">{content.metricLabel}</p>
-      </motion.div>
-    </motion.section>
-  )
-}
-
-type ReadyPreview = Extract<NonNullable<ReturnType<typeof useQuery<typeof api.demo.getTemplatePreview>>>, { status: "ready" }>
-
-function ConfirmBusiness({
-  preview,
-  onBack,
-  onStart,
-}: {
-  preview: ReadyPreview
-  onBack: () => void
-  onStart: () => void
-}) {
-  const location = [preview.address, preview.city, preview.country].filter(Boolean).join(", ")
-  return (
-    <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="mx-auto w-full max-w-3xl">
-      <div className="mb-8 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#ff5b35]">Your workspace</p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] md:text-5xl">We found your business.</h1>
-        <p className="mt-3 text-black/50">Confirm the details and we will prepare your intelligence workspace.</p>
-      </div>
-      <Card className="overflow-hidden rounded-[2rem] border-black/10 bg-white/65 py-0 shadow-[0_24px_80px_rgba(23,23,18,0.12)] backdrop-blur">
-        <CardContent className="grid gap-0 p-0 md:grid-cols-[1fr_0.7fr]">
-          <div className="p-7 md:p-9">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-black/40">{preview.type}</p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{preview.name}</h2>
-              </div>
-              <div className="flex size-11 items-center justify-center rounded-full bg-[#b5d9c4]"><Check className="size-5" /></div>
-            </div>
-            <p className="mt-5 line-clamp-3 text-sm leading-relaxed text-black/55">{preview.description ?? "Your real business data is ready to be analyzed."}</p>
-            {location ? <p className="mt-6 flex items-start gap-2 text-sm text-black/55"><MapPin className="mt-0.5 size-4 shrink-0 text-[#ff5b35]" />{location}</p> : null}
-          </div>
-          <div className="flex flex-col justify-between border-t border-black/10 bg-[#171712] p-7 text-[#f4f0e8] md:border-l md:border-t-0 md:p-9">
-            <div>
-              <Sparkles className="size-5 text-[#ff7554]" />
-              <p className="mt-5 text-sm leading-relaxed text-white/55">We will connect your feedback, identify the strongest signals, and prepare actionable opportunities.</p>
-            </div>
-            <Button onClick={onStart} className="mt-8 rounded-full bg-[#ff5b35] text-[#171712] hover:bg-[#ff7554]">
-              Prepare workspace <ChevronRight className="ml-2 size-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      <Button variant="ghost" onClick={onBack} className="mx-auto mt-5 flex rounded-full text-black/50 hover:bg-black/5"><ChevronLeft className="mr-2 size-4" />Back to pitch</Button>
-    </motion.section>
-  )
-}
-
-function SetupBusiness({
-  completedSteps,
-  error,
-  onRetry,
-}: {
-  completedSteps: number
-  error: string | null
-  onRetry: () => void
-}) {
-  const percent = (completedSteps / DEMO_SETUP_STEPS.length) * 100
-  return (
-    <motion.section initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto w-full max-w-xl">
-      <div className="mb-9 text-center">
-        <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#171712] text-[#f4f0e8] shadow-xl">
-          {completedSteps === DEMO_SETUP_STEPS.length && !error ? <Check className="size-6" /> : <Loader2 className="size-6 animate-spin" />}
-        </div>
-        <h1 className="mt-5 text-4xl font-semibold tracking-[-0.045em]">{error ? "Setup needs attention" : completedSteps === DEMO_SETUP_STEPS.length ? "Workspace ready." : "Building your advantage."}</h1>
-        <p className="mt-3 text-sm text-black/50">{error ?? "Real business data is being organized into a workspace you can act on."}</p>
-      </div>
-      <Card className="rounded-[2rem] border-black/10 bg-white/65 py-0 shadow-[0_24px_80px_rgba(23,23,18,0.12)] backdrop-blur">
-        <CardContent className="space-y-5 p-7 md:p-9">
-          <Progress value={percent} className="h-1.5 bg-black/10 [&_[data-slot=progress-indicator]]:bg-[#ff5b35]" />
-          <div className="space-y-2">
-            {DEMO_SETUP_STEPS.map((step, index) => {
-              const Icon = step.icon
-              const complete = index < completedSteps
-              const active = index === completedSteps && !error
-              return (
-                <motion.div key={step.label} animate={{ opacity: complete || active ? 1 : 0.35 }} className="flex items-center gap-3 rounded-xl px-1 py-2">
-                  <div className={`flex size-9 items-center justify-center rounded-full ${complete ? "bg-[#b5d9c4]" : active ? "bg-[#ff5b35]" : "bg-black/5"}`}>
-                    {complete ? <Check className="size-4" /> : <Icon className={`size-4 ${active ? "animate-pulse" : ""}`} />}
-                  </div>
-                  <span className="text-sm font-medium">{step.label}</span>
-                  {active ? <span className="ml-auto text-xs text-black/40">Working…</span> : null}
-                </motion.div>
-              )
-            })}
-          </div>
-          {error ? <Button onClick={onRetry} className="w-full rounded-full bg-[#171712] text-[#f4f0e8]">Try again</Button> : null}
-        </CardContent>
-      </Card>
     </motion.section>
   )
 }
 
 function DemoError({ message, onBack }: { message: string; onBack: () => void }) {
   return (
-    <div className="flex min-h-svh items-center justify-center bg-[#f4f0e8] p-6">
+    <div className="flex min-h-svh items-center justify-center bg-background p-6">
       <div className="max-w-md text-center">
         <h1 className="text-3xl font-semibold tracking-tight">Demo unavailable</h1>
-        <p className="mt-3 text-sm text-black/55">{message}</p>
+        <p className="mt-3 text-sm text-muted-foreground">{message}</p>
         <Button onClick={onBack} className="mt-6 rounded-full">Back to workspace</Button>
       </div>
     </div>
   )
 }
 
+type Phase = "slides" | "form"
+
+function DemoExperience() {
+  const router = useRouter()
+  const preview = useQuery(api.demo.getTemplatePreview)
+  const [phase, setPhase] = useState<Phase>("slides")
+  const [slide, setSlide] = useState(0)
+
+  if (preview === undefined) return <FullScreenLoader />
+  if (preview.status === "error") {
+    return <DemoError message={preview.message} onBack={() => router.push("/")} />
+  }
+
+  return (
+    <main className="min-h-svh bg-background text-foreground">
+      <header className="flex items-center justify-between border-b px-4 py-3">
+        <Logo className="h-7" />
+        <div className="flex items-center gap-3">
+          <span className="hidden items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:flex">
+            <span className="size-2 animate-pulse rounded-full bg-primary" />
+            Live demo
+          </span>
+          <UserButton />
+        </div>
+      </header>
+
+      <div className="relative mx-auto flex min-h-[calc(100svh-57px)] max-w-6xl items-center px-4 pb-10 md:px-10">
+        <AnimatePresence mode="wait">
+          {phase === "slides" ? (
+            <PitchSlides
+              key="slides"
+              slide={slide}
+              onBack={() => setSlide((v) => Math.max(0, v - 1))}
+              onNext={() => {
+                if (slide === DEMO_SLIDES.length - 1) setPhase("form")
+                else setSlide((v) => v + 1)
+              }}
+            />
+          ) : (
+            <DemoForm key="form" preview={preview} onBack={() => setPhase("slides")} />
+          )}
+        </AnimatePresence>
+      </div>
+    </main>
+  )
+}
+
 export default function DemoPage() {
-  return <AuthGate><DemoExperience /></AuthGate>
+  return (
+    <AuthGate>
+      <DemoExperience />
+    </AuthGate>
+  )
 }
