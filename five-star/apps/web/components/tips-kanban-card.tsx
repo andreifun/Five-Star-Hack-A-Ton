@@ -9,10 +9,12 @@ import { Loader2, Play } from "lucide-react"
 export function TipsKanbanCard({
   tip,
   onStart,
+  onOpen,
   starting = false,
 }: {
   tip: Doc<"tips">
   onStart?: () => void
+  onOpen?: () => void
   starting?: boolean
 }) {
   return (
@@ -22,7 +24,7 @@ export function TipsKanbanCard({
         <Badge variant="outline">{CATEGORY_LABELS[tip.category]}</Badge>
       </div>
       <p className="mt-2.5 text-sm font-medium">{tip.title}</p>
-      <p className="mt-2 text-sm text-muted-foreground">· {tip.content}</p>
+      <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">· {tip.content}</p>
       {tip.status === "pending" && onStart ? (
         <Button
           size="sm"
@@ -40,6 +42,19 @@ export function TipsKanbanCard({
             <Play className="size-3.5" />
           )}
           {starting ? "Starting…" : "Start"}
+        </Button>
+      ) : null}
+      {onOpen ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-2 w-full md:hidden"
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpen()
+          }}
+        >
+          Open
         </Button>
       ) : null}
     </div>

@@ -70,7 +70,7 @@ export function BusinessSwitcher() {
             >
               <span className="truncate">{b.name}</span>
               <button
-                className="ml-2 shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                className="ml-2 shrink-0 rounded p-1 transition-opacity hover:bg-destructive/10 hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation()
                   setPendingDelete({ id: b._id, name: b.name })

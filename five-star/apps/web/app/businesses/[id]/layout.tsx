@@ -21,6 +21,7 @@ function BusinessShell({ children }: { children: React.ReactNode }) {
   const { business } = useCurrentBusiness()
   const pathname = usePathname()
   const isTipWorkspace = /^\/businesses\/[^/]+\/tips\/[^/]+$/.test(pathname)
+  const isSetup = /^\/businesses\/[^/]+\/setup$/.test(pathname)
 
   if (business === undefined) return <FullScreenLoader />
 
@@ -33,6 +34,8 @@ function BusinessShell({ children }: { children: React.ReactNode }) {
       />
     )
   }
+
+  if (isSetup) return children
 
   return (
     <div className="flex h-svh flex-col">

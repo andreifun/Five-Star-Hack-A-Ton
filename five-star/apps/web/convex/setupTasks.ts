@@ -98,6 +98,72 @@ export const listByBusiness = query({
   },
 });
 
+export const getOverview = query({
+  args: { businessId: v.id("businesses") },
+  handler: async (ctx, args) => {
+    await requireBusinessOwner(ctx, args.businessId);
+    const business = await ctx.db.get(args.businessId);
+    if (!business) return null;
+
+    const [tasks, reviews, products, tips] = await Promise.all([
+      ctx.db
+        .query("setupTasks")
+        .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+        .collect(),
+      ctx.db
+        .query("reviews")
+        .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+        .collect(),
+      ctx.db
+        .query("products")
+        .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+        .collect(),
+      ctx.db
+        .query("tips")
+        .withIndex("by_businessId", (q) => q.eq("businessId", args.businessId))
+        .collect(),
+    ]);
+
+    const reviewsBySource: Record<string, number> = {};
+    for (const review of reviews) {
+      reviewsBySource[review.source] = (reviewsBySource[review.source] ?? 0) + 1;
+    }
+
+    const socialLinks = business.socialLinks ?? {};
+    const connectedSources = [
+      business.website ? "website" : null,
+      socialLinks.google ? "google" : null,
+      socialLinks.booking ? "booking" : null,
+      socialLinks.tripadvisor ? "tripadvisor" : null,
+      socialLinks.yelp ? "yelp" : null,
+    ].filter((source): source is string => source !== null);
+
+    return {
+      tasks: tasks.sort((a, b) => a.order - b.order),
+      discoveries: {
+        connectedSources,
+        reviewCount: reviews.length,
+        reviewsBySource,
+        productCount: products.length,
+        tipCount: tips.length,
+      },
+      profile: {
+        name: business.name,
+        ...(business.description ? { description: business.description } : {}),
+        ...(business.address ? { address: business.address } : {}),
+        ...(business.city ? { city: business.city } : {}),
+        ...(business.country ? { country: business.country } : {}),
+        ...(business.phone ? { phone: business.phone } : {}),
+        ...(business.openingHours ? { openingHours: business.openingHours } : {}),
+        ...(business.mapsWebsite ?? business.website
+          ? { website: business.mapsWebsite ?? business.website }
+          : {}),
+        ...(business.locationType ? { locationType: business.locationType } : {}),
+      },
+    };
+  },
+});
+
 export const allCompleted = query({
   args: { businessId: v.id("businesses") },
   handler: async (ctx, args) => {

@@ -95,13 +95,13 @@ export function TipConversation({
                 )}
               >
                 {message.role === "user" ? (
-                  <div className="overflow-wrap-anywhere max-w-[88%] min-w-0 rounded-2xl bg-primary px-4 py-2.5 text-sm text-primary-foreground sm:max-w-[80%]">
+                  <div className="max-w-[88%] min-w-0 rounded-2xl bg-primary px-4 py-2.5 text-sm break-words text-primary-foreground sm:max-w-[80%]">
                     {message.content}
                   </div>
                 ) : (
                   <div
                     className={cn(
-                      "overflow-wrap-anywhere max-w-full min-w-0 text-sm sm:max-w-[90%]",
+                      "max-w-full min-w-0 text-sm break-words sm:max-w-[90%]",
                       message.isError && "text-destructive"
                     )}
                   >

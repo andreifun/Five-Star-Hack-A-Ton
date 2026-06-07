@@ -106,7 +106,7 @@ export function PromptBar({
                     variant="ghost"
                     size="icon"
                     onClick={() => removeImage(i)}
-                    className="absolute inset-0 size-full rounded-none bg-black/40 opacity-0 transition-opacity group-hover:opacity-100"
+                    className="absolute inset-0 size-full rounded-none bg-black/40 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                   >
                     <X className="size-3 text-white" />
                   </Button>

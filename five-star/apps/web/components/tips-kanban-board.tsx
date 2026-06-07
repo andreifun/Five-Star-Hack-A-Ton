@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useMutation } from "convex/react"
 import { useRouter } from "next/navigation"
@@ -70,6 +70,25 @@ export function TipsKanbanBoard({
     setDrag(state)
   }
 
+  const handleStart = useCallback(async (tip: Tip) => {
+    if (startingTipId) return
+    setStartingTipId(tip._id)
+    setTips((previous) =>
+      previous.map((item) =>
+        item._id === tip._id ? { ...item, status: "in_progress" } : item,
+      ),
+    )
+    try {
+      await updateStatus({ tipId: tip._id, status: "in_progress" })
+      router.push(`/businesses/${businessId}/tips/${tip._id}?start=1`)
+    } catch {
+      setTips((previous) =>
+        previous.map((item) => (item._id === tip._id ? tip : item)),
+      )
+      setStartingTipId(null)
+    }
+  }, [businessId, router, startingTipId, updateStatus])
+
   function getColumnAt(x: number, y: number): Status | null {
     for (const [status, element] of columnRefs.current) {
       const rect = element.getBoundingClientRect()
@@ -106,7 +125,11 @@ export function TipsKanbanBoard({
       if (!current) return
       if (!current.moved) {
         sync(null)
-        router.push(`/businesses/${businessId}/tips/${current.tip._id}`)
+        if (current.tip.status === "pending") {
+          void handleStart(current.tip)
+        } else {
+          router.push(`/businesses/${businessId}/tips/${current.tip._id}`)
+        }
         return
       }
       if (current.hoverColumn) {
@@ -129,7 +152,7 @@ export function TipsKanbanBoard({
       window.removeEventListener("mousemove", onMove)
       window.removeEventListener("mouseup", onUp)
     }
-  }, [activeDragId, businessId, router, updateStatus])
+  }, [activeDragId, businessId, handleStart, router, updateStatus])
 
   function handleMouseDown(tip: Tip, event: React.MouseEvent<HTMLDivElement>) {
     event.preventDefault()
@@ -154,25 +177,6 @@ export function TipsKanbanBoard({
 
   function sortByPriority(items: Tip[]) {
     return [...items].sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3))
-  }
-
-  async function handleStart(tip: Tip) {
-    if (startingTipId) return
-    setStartingTipId(tip._id)
-    setTips((previous) =>
-      previous.map((item) =>
-        item._id === tip._id ? { ...item, status: "in_progress" } : item,
-      ),
-    )
-    try {
-      await updateStatus({ tipId: tip._id, status: "in_progress" })
-      router.push(`/businesses/${businessId}/tips/${tip._id}?start=1`)
-    } catch {
-      setTips((previous) =>
-        previous.map((item) => (item._id === tip._id ? tip : item)),
-      )
-      setStartingTipId(null)
-    }
   }
 
   function getColumnItems(status: Status) {
@@ -226,6 +230,13 @@ export function TipsKanbanBoard({
                         tip={item.data}
                         starting={startingTipId === item.data._id}
                         onStart={() => void handleStart(item.data)}
+                        onOpen={() => {
+                          if (item.data.status === "pending") {
+                            void handleStart(item.data)
+                          } else {
+                            router.push(`/businesses/${businessId}/tips/${item.data._id}`)
+                          }
+                        }}
                       />
                     </motion.div>
                   ))}
