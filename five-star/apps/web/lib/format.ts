@@ -10,7 +10,6 @@ type BusinessType = Doc<"businesses">["type"]
 export const SOURCE_LABELS: Record<Source, string> = {
   google: "Google",
   tripadvisor: "TripAdvisor",
-  booking: "Booking.com",
   yelp: "Yelp",
   manual: "Manual",
   other: "Other",

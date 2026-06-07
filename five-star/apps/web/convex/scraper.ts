@@ -343,19 +343,22 @@ async function crawlWebsiteForMenu(startUrl: string): Promise<{
 // ─── Action 1: getMapsOptions ─────────────────────────────────────────────────
 
 export const getMapsOptions = action({
-  args: { businessName: v.string() },
+  args: { businessName: v.string(), businessType: v.optional(v.string()) },
   handler: async (
     _ctx,
     args,
   ): Promise<Array<{ name: string; address: string; mapsUrl: string; dataId: string }>> => {
     const apiKey = getSerpApiKey(); // throws if not set — surfaces in Convex dashboard logs
-    const results = await serpSearchPlaces(args.businessName.trim(), apiKey);
+    const query = args.businessType
+      ? `${args.businessName.trim()} ${args.businessType}`
+      : args.businessName.trim();
+    const results = await serpSearchPlaces(query, apiKey);
     // null = API-level failure (credits exhausted, HTTP error, error body) → try Serper fallback
     // []   = API worked but no matching places → return empty, don't fall back
     if (results !== null) return results;
     const serperKey = getOptionalSerperApiKey();
     if (!serperKey) return [];
-    return serperSearchPlaces(args.businessName.trim(), serperKey);
+    return serperSearchPlaces(query, serperKey);
   },
 });
 

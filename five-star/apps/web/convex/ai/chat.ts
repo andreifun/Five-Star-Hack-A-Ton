@@ -194,7 +194,6 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
               source?:
                 | "google"
                 | "tripadvisor"
-                | "booking"
                 | "yelp"
                 | "manual"
                 | "other"
@@ -218,7 +217,6 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
                   enum: [
                     "google",
                     "tripadvisor",
-                    "booking",
                     "yelp",
                     "manual",
                     "other",
