@@ -168,11 +168,17 @@ ${html.slice(0, 15000)}`,
         resolvedUrl = r.url;
       }
 
+      let dataId: string;
       const dataIdMatch = resolvedUrl.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
-      if (!dataIdMatch) {
-        throw new Error(`Could not extract Google Maps place ID from URL: ${sl.google}`);
+      if (dataIdMatch) {
+        dataId = dataIdMatch[1]!;
+      } else {
+        const cidMatch = resolvedUrl.match(/[?&]cid=(\d+)/);
+        if (!cidMatch) {
+          throw new Error(`Could not extract Google Maps place ID from URL: ${sl.google}`);
+        }
+        dataId = `0x0:0x${BigInt(cidMatch[1]!).toString(16)}`;
       }
-      const dataId = dataIdMatch[1]!;
 
       // Fetch place details (website, address, phone) from the google_maps engine.
       let mapsWebsiteSet = false;

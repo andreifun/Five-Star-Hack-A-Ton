@@ -373,10 +373,13 @@ export const scrapeMenuFromUrl = action({
 
     // Extract data_id from mapsUrl if not provided directly
     const dataId =
-      args.dataId ??
+      (args.dataId || null) ??
       (() => {
-        const match = args.mapsUrl.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
-        return match?.[1] ?? null;
+        const hexMatch = args.mapsUrl.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
+        if (hexMatch) return hexMatch[1]!;
+        const cidMatch = args.mapsUrl.match(/[?&]cid=(\d+)/);
+        if (cidMatch) return `0x0:0x${BigInt(cidMatch[1]!).toString(16)}`;
+        return null;
       })();
 
     if (!dataId) {
