@@ -20,6 +20,7 @@ import type * as businessMetrics from "../businessMetrics.js";
 import type * as businesses from "../businesses.js";
 import type * as chatMessages from "../chatMessages.js";
 import type * as chatThreads from "../chatThreads.js";
+import type * as demo from "../demo.js";
 import type * as emailDrafts from "../emailDrafts.js";
 import type * as helpers from "../helpers.js";
 import type * as placesSearch from "../placesSearch.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   businesses: typeof businesses;
   chatMessages: typeof chatMessages;
   chatThreads: typeof chatThreads;
+  demo: typeof demo;
   emailDrafts: typeof emailDrafts;
   helpers: typeof helpers;
   placesSearch: typeof placesSearch;

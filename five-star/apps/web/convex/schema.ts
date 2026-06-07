@@ -57,6 +57,8 @@ export default defineSchema({
     location: v.optional(v.string()),
     locationType: v.optional(v.union(v.literal("rural"), v.literal("urban"))),
     seasonality: v.optional(v.union(v.literal("all_year"), v.literal("seasonal"))),
+    isDemo: v.optional(v.boolean()),
+    demoSourceBusinessId: v.optional(v.id("businesses")),
     isActive: v.boolean(),
   })
     .index("by_ownerId", ["ownerId"])

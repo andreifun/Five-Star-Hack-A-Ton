@@ -2,9 +2,19 @@
 
 import type { Doc } from "@/convex/_generated/dataModel"
 import { Badge } from "@workspace/ui/components/badge"
+import { Button } from "@workspace/ui/components/button"
 import { CATEGORY_LABELS, PRIORITY_BADGE } from "@/lib/format"
+import { Loader2, Play } from "lucide-react"
 
-export function TipsKanbanCard({ tip }: { tip: Doc<"tips"> }) {
+export function TipsKanbanCard({
+  tip,
+  onStart,
+  starting = false,
+}: {
+  tip: Doc<"tips">
+  onStart?: () => void
+  starting?: boolean
+}) {
   return (
     <div className="rounded-xl border bg-card p-4">
       <div className="flex items-center gap-2">
@@ -13,6 +23,25 @@ export function TipsKanbanCard({ tip }: { tip: Doc<"tips"> }) {
       </div>
       <p className="mt-2.5 text-sm font-medium">{tip.title}</p>
       <p className="mt-2 text-sm text-muted-foreground">· {tip.content}</p>
+      {tip.status === "pending" && onStart ? (
+        <Button
+          size="sm"
+          className="mt-4 w-full"
+          disabled={starting}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onStart()
+          }}
+        >
+          {starting ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Play className="size-3.5" />
+          )}
+          {starting ? "Starting…" : "Start"}
+        </Button>
+      ) : null}
     </div>
   )
 }

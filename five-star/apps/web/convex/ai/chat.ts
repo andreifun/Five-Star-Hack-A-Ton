@@ -1,11 +1,11 @@
-"use node";
+"use node"
 
-import { v } from "convex/values";
-import { action } from "../_generated/server";
-import { internal, api } from "../_generated/api";
-import { Doc, Id } from "../_generated/dataModel";
-import { getAiGateway } from "./env";
-import { generateText, tool, jsonSchema, stepCountIs } from "ai";
+import { v } from "convex/values"
+import { action } from "../_generated/server"
+import { internal, api } from "../_generated/api"
+import { Doc, Id } from "../_generated/dataModel"
+import { getAiGateway } from "./env"
+import { generateText, tool, jsonSchema, stepCountIs } from "ai"
 
 export const sendMessage = action({
   args: {
@@ -18,31 +18,39 @@ export const sendMessage = action({
   handler: async (
     ctx,
     args: {
-      threadId: Id<"chatThreads">;
-      businessId: Id<"businesses">;
-      content: string;
-      model?: string;
-      kickoff?: boolean;
-    },
-  ): Promise<{ content: string; messageId: Id<"chatMessages">; isError: boolean }> => {
-    const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
-    const gateway = getAiGateway();
+      threadId: Id<"chatThreads">
+      businessId: Id<"businesses">
+      content: string
+      model?: string
+      kickoff?: boolean
+    }
+  ): Promise<{
+    content: string
+    messageId: Id<"chatMessages">
+    isError: boolean
+  }> => {
+    const modelId = args.model ?? "anthropic/claude-sonnet-4.6"
+    const gateway = getAiGateway()
 
     const businessWithMetrics = (await ctx.runQuery(api.businesses.getById, {
       businessId: args.businessId,
-    })) as ({ metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">) | null;
+    })) as
+      | ({ metrics: Doc<"businessMetrics"> | null } & Doc<"businesses">)
+      | null
 
-    if (!businessWithMetrics) throw new Error("Business not found or access denied");
+    if (!businessWithMetrics)
+      throw new Error("Business not found or access denied")
 
     const thread = (await ctx.runQuery(api.chatThreads.getById, {
       threadId: args.threadId,
-    })) as Doc<"chatThreads"> | null;
+    })) as Doc<"chatThreads"> | null
 
     if (!thread || thread.businessId !== args.businessId) {
-      throw new Error("Thread not found or does not belong to this business");
+      throw new Error("Thread not found or does not belong to this business")
     }
 
-    if (args.kickoff && !thread.tipId) throw new Error("Kickoff requires a tip thread");
+    if (args.kickoff && !thread.tipId)
+      throw new Error("Kickoff requires a tip thread")
 
     if (!args.kickoff) {
       await ctx.runMutation(internal.chatMessages.addMessage, {
@@ -51,32 +59,39 @@ export const sendMessage = action({
         role: "user",
         content: args.content,
         isError: false,
-      });
+      })
     }
 
-    const [history, recentReviewsPage, pendingTipsPage] = await Promise.all([
-      ctx.runQuery(internal.chatMessages.getRecentForContext, {
-        threadId: args.threadId,
-        limit: 20,
-      }) as Promise<Doc<"chatMessages">[]>,
-      ctx.runQuery(api.reviews.listByBusiness, {
-        businessId: args.businessId,
-        paginationOpts: { numItems: 10, cursor: null },
-      }),
-      ctx.runQuery(api.tips.listByBusiness, {
-        businessId: args.businessId,
-        paginationOpts: { numItems: 10, cursor: null },
-        status: "pending",
-      }),
-    ]);
+    const [history, recentReviewsPage, pendingTipsPage, actionItems] =
+      await Promise.all([
+        ctx.runQuery(internal.chatMessages.getRecentForContext, {
+          threadId: args.threadId,
+          limit: 20,
+        }) as Promise<Doc<"chatMessages">[]>,
+        ctx.runQuery(api.reviews.listByBusiness, {
+          businessId: args.businessId,
+          paginationOpts: { numItems: 10, cursor: null },
+        }),
+        ctx.runQuery(api.tips.listByBusiness, {
+          businessId: args.businessId,
+          paginationOpts: { numItems: 10, cursor: null },
+          status: "pending",
+        }),
+        ctx.runQuery(api.agentTodos.listByThread, {
+          businessId: args.businessId,
+          threadId: args.threadId,
+        }) as Promise<Doc<"agentTodos">[]>,
+      ])
 
-    const metrics = businessWithMetrics.metrics;
-    const recentReviews = (recentReviewsPage as { page: Doc<"reviews">[] }).page;
-    const pendingTips = (pendingTipsPage as { page: Doc<"tips">[] }).page;
+    const metrics = businessWithMetrics.metrics
+    const recentReviews = (recentReviewsPage as { page: Doc<"reviews">[] }).page
+    const pendingTips = (pendingTipsPage as { page: Doc<"tips">[] }).page
     const tipWorkspace = thread.tipId
-      ? await ctx.runQuery(api.tips.getWorkspace, { tipId: thread.tipId }) as { sourceReviews: Doc<"reviews">[] } | null
-      : null;
-    const sourceReviews = tipWorkspace?.sourceReviews ?? [];
+      ? ((await ctx.runQuery(api.tips.getWorkspace, {
+          tipId: thread.tipId,
+        })) as { sourceReviews: Doc<"reviews">[] } | null)
+      : null
+    const sourceReviews = tipWorkspace?.sourceReviews ?? []
 
     const systemPrompt = `You are an expert hospitality consultant and business intelligence assistant for ${businessWithMetrics.name}, a ${businessWithMetrics.type} business. You help the owner deeply understand customer feedback, identify trends, and take action.
 
@@ -97,13 +112,19 @@ Current Performance:
 - Top review topics: ${metrics?.topTopics.slice(0, 8).join(", ") || "None yet"}
 - Open improvement tips: ${metrics?.pendingTipsCount ?? 0}
 
-${thread.tipId ? `Active Tip Workspace:
+${
+  thread.tipId
+    ? `Active Tip Workspace:
 - Title: ${thread.title}
 - Context: ${thread.context ?? "No additional context"}
 - Keep the conversation focused on executing this tip unless the user asks otherwise.
 - Source reviews attached to this tip:
 ${sourceReviews.length > 0 ? sourceReviews.map((r) => `  - [${r.rating}★ ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "  - None attached"}
-` : ""}
+- Conversation action list:
+${actionItems.length > 0 ? actionItems.map((item) => `  - [${item.isCompleted ? "completed" : item.priority}] ${item.title}: ${item.description} (id: ${item._id})`).join("\n") : "  - No action items yet"}
+`
+    : ""
+}
 
 Recent Reviews (last 10):
 ${recentReviews.length > 0 ? recentReviews.map((r: Doc<"reviews">) => `[${r.rating}★ ${r.sentiment ?? ""} · ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "No reviews yet."}
@@ -113,32 +134,37 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
 
 ## Instructions
 - Use your tools proactively. If the user asks about specific topics, sentiment, or ratings — search for those reviews rather than guessing.
-- When you identify a concrete action the owner should take, create a todo item for them using create_todo.
+- Treat the action list as global state for this conversation, not as message content.
+- Use list_action_items or explain_action_item whenever the user asks to see or explain action items.
+- When you identify a concrete action the owner should take, add it with create_action_item.
+- When the user asks to finish an action item, mark it complete with complete_action_item.
 - When current external information would help execute the active tip, run research and save the cited report.
 - When the user asks for an email, draft and save it. Never send email yourself; the owner must explicitly approve the final draft first.
 - Reference specific review data in your analysis.
-- Be direct, specific, and practical. Keep responses concise.`;
+- Be direct, specific, and practical. Keep responses concise.`
     const kickoffInstructions = args.kickoff
       ? `\n\n## Mandatory kickoff workflow
 - Before responding, call run_research at least once with a focused query relevant to the active tip.
 - Inspect relevant reviews using search_reviews or get_low_rated_reviews when useful.
-- Create a practical ordered action plan by calling create_todo for each concrete task. Create 3-7 todos unless the issue genuinely needs fewer.
+- Create a practical ordered action plan by calling create_action_item for each concrete task. Create 3-7 action items unless the issue genuinely needs fewer.
 - After tool calls, summarize the evidence, research findings, and execution plan.`
-      : "";
+      : ""
 
     const messages: { role: "user" | "assistant"; content: string }[] = history
-      .filter((m: Doc<"chatMessages">) => m.role === "user" || m.role === "assistant")
+      .filter(
+        (m: Doc<"chatMessages">) => m.role === "user" || m.role === "assistant"
+      )
       .map((m: Doc<"chatMessages">) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
-      }));
-    if (args.kickoff) messages.push({ role: "user", content: args.content });
+      }))
+    if (args.kickoff) messages.push({ role: "user", content: args.content })
 
-    let assistantContent = "";
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let isError = false;
-    let errorMessage: string | undefined;
+    let assistantContent = ""
+    let inputTokens = 0
+    let outputTokens = 0
+    let isError = false
+    let errorMessage: string | undefined
 
     try {
       const result = await generateText({
@@ -152,34 +178,83 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
             description:
               "Search and filter customer reviews by text, sentiment, rating, or source platform. Use this to find specific feedback patterns or validate claims about the business.",
             inputSchema: jsonSchema<{
-              query?: string;
-              sentiment?: "positive" | "neutral" | "negative";
-              source?: "google" | "tripadvisor" | "booking" | "yelp" | "manual" | "other";
-              minRating?: number;
-              maxRating?: number;
-              limit?: number;
+              query?: string
+              sentiment?: "positive" | "neutral" | "negative"
+              source?:
+                | "google"
+                | "tripadvisor"
+                | "booking"
+                | "yelp"
+                | "manual"
+                | "other"
+              minRating?: number
+              maxRating?: number
+              limit?: number
             }>({
               type: "object",
               properties: {
-                query: { type: "string", description: "Text to search in review content" },
-                sentiment: { type: "string", enum: ["positive", "neutral", "negative"], description: "Filter by review sentiment" },
-                source: { type: "string", enum: ["google", "tripadvisor", "booking", "yelp", "manual", "other"], description: "Filter by review platform" },
-                minRating: { type: "number", minimum: 1, maximum: 5, description: "Minimum star rating" },
-                maxRating: { type: "number", minimum: 1, maximum: 5, description: "Maximum star rating" },
-                limit: { type: "number", minimum: 1, maximum: 20, description: "How many reviews to return (default 10)" },
+                query: {
+                  type: "string",
+                  description: "Text to search in review content",
+                },
+                sentiment: {
+                  type: "string",
+                  enum: ["positive", "neutral", "negative"],
+                  description: "Filter by review sentiment",
+                },
+                source: {
+                  type: "string",
+                  enum: [
+                    "google",
+                    "tripadvisor",
+                    "booking",
+                    "yelp",
+                    "manual",
+                    "other",
+                  ],
+                  description: "Filter by review platform",
+                },
+                minRating: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 5,
+                  description: "Minimum star rating",
+                },
+                maxRating: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 5,
+                  description: "Maximum star rating",
+                },
+                limit: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 20,
+                  description: "How many reviews to return (default 10)",
+                },
               },
             }),
-            execute: async ({ query, sentiment, source, minRating, maxRating, limit }) => {
-              const reviews = await ctx.runQuery(internal.reviews.searchForAgent, {
-                businessId: args.businessId,
-                searchQuery: query,
-                sentiment,
-                source,
-                minRating,
-                maxRating,
-                limit: limit ?? 10,
-              });
-              return { reviews, count: reviews.length };
+            execute: async ({
+              query,
+              sentiment,
+              source,
+              minRating,
+              maxRating,
+              limit,
+            }) => {
+              const reviews = await ctx.runQuery(
+                internal.reviews.searchForAgent,
+                {
+                  businessId: args.businessId,
+                  searchQuery: query,
+                  sentiment,
+                  source,
+                  minRating,
+                  maxRating,
+                  limit: limit ?? 10,
+                }
+              )
+              return { reviews, count: reviews.length }
             },
           }),
 
@@ -189,17 +264,30 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
             inputSchema: jsonSchema<{ maxRating?: number; limit?: number }>({
               type: "object",
               properties: {
-                maxRating: { type: "number", minimum: 1, maximum: 3, description: "Maximum rating to include (default: 2)" },
-                limit: { type: "number", minimum: 1, maximum: 20, description: "How many reviews to return" },
+                maxRating: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 3,
+                  description: "Maximum rating to include (default: 2)",
+                },
+                limit: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 20,
+                  description: "How many reviews to return",
+                },
               },
             }),
             execute: async ({ maxRating, limit }) => {
-              const reviews = await ctx.runQuery(internal.reviews.searchForAgent, {
-                businessId: args.businessId,
-                maxRating: maxRating ?? 2,
-                limit: limit ?? 10,
-              });
-              return { reviews, count: reviews.length };
+              const reviews = await ctx.runQuery(
+                internal.reviews.searchForAgent,
+                {
+                  businessId: args.businessId,
+                  maxRating: maxRating ?? 2,
+                  limit: limit ?? 10,
+                }
+              )
+              return { reviews, count: reviews.length }
             },
           }),
 
@@ -207,12 +295,16 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
             description:
               "Retrieve improvement tips. Check what recommendations have been generated and their completion status.",
             inputSchema: jsonSchema<{
-              status?: "pending" | "in_progress" | "done" | "dismissed";
-              limit?: number;
+              status?: "pending" | "in_progress" | "done" | "dismissed"
+              limit?: number
             }>({
               type: "object",
               properties: {
-                status: { type: "string", enum: ["pending", "in_progress", "done", "dismissed"], description: "Filter by status" },
+                status: {
+                  type: "string",
+                  enum: ["pending", "in_progress", "done", "dismissed"],
+                  description: "Filter by status",
+                },
                 limit: { type: "number", minimum: 1, maximum: 30 },
               },
             }),
@@ -221,8 +313,8 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
                 businessId: args.businessId,
                 paginationOpts: { numItems: limit ?? 20, cursor: null },
                 status,
-              });
-              const tips = (tipsPage as { page: Doc<"tips">[] }).page;
+              })
+              const tips = (tipsPage as { page: Doc<"tips">[] }).page
               return {
                 tips: tips.map((t) => ({
                   title: t.title,
@@ -232,24 +324,93 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
                   content: t.content,
                 })),
                 count: tips.length,
-              };
+              }
             },
           }),
 
-          create_todo: tool({
+          list_action_items: tool({
             description:
-              "Create a persisted action item for the active tip. Use this whenever you identify a specific, concrete task the owner should do.",
+              "See the global action list for this conversation, including completed items. Use this before discussing or changing existing action items.",
+            inputSchema: jsonSchema<Record<string, never>>({
+              type: "object",
+              properties: {},
+            }),
+            execute: async () => {
+              const items = (await ctx.runQuery(api.agentTodos.listByThread, {
+                businessId: args.businessId,
+                threadId: args.threadId,
+              })) as Doc<"agentTodos">[]
+              return {
+                items: items.map((item) => ({
+                  id: item._id,
+                  title: item.title,
+                  description: item.description,
+                  priority: item.priority,
+                  status: item.isCompleted ? "completed" : "open",
+                })),
+              }
+            },
+          }),
+
+          explain_action_item: tool({
+            description:
+              "Get the full details of one action item so you can explain its purpose, rationale, and expected outcome.",
+            inputSchema: jsonSchema<{ actionItemId: string }>({
+              type: "object",
+              required: ["actionItemId"],
+              properties: {
+                actionItemId: {
+                  type: "string",
+                  description: "Action item id from list_action_items",
+                },
+              },
+            }),
+            execute: async ({ actionItemId }) => {
+              const items = (await ctx.runQuery(api.agentTodos.listByThread, {
+                businessId: args.businessId,
+                threadId: args.threadId,
+              })) as Doc<"agentTodos">[]
+              const item = items.find(
+                (candidate) => candidate._id === actionItemId
+              )
+              return item
+                ? {
+                    id: item._id,
+                    title: item.title,
+                    description: item.description,
+                    priority: item.priority,
+                    status: item.isCompleted ? "completed" : "open",
+                  }
+                : { error: "Action item not found in this conversation." }
+            },
+          }),
+
+          create_action_item: tool({
+            description:
+              "Add a persisted item to the global action list for this conversation. Use this whenever you identify a specific, concrete task the owner should do.",
             inputSchema: jsonSchema<{
-              title: string;
-              description: string;
-              priority: "high" | "medium" | "low";
+              title: string
+              description: string
+              priority: "high" | "medium" | "low"
             }>({
               type: "object",
               required: ["title", "description", "priority"],
               properties: {
-                title: { type: "string", description: "Short, actionable title (e.g. 'Address slow service complaints')" },
-                description: { type: "string", description: "Detailed explanation: what to do, why it matters, and suggested steps. Be specific." },
-                priority: { type: "string", enum: ["high", "medium", "low"], description: "Impact-based priority" },
+                title: {
+                  type: "string",
+                  description:
+                    "Short, actionable title (e.g. 'Address slow service complaints')",
+                },
+                description: {
+                  type: "string",
+                  description:
+                    "A concise explanation of what to do and why it matters. Keep it readable in 1-3 short sentences and under 400 characters. Put deeper analysis in the chat response, not the action item.",
+                },
+                priority: {
+                  type: "string",
+                  enum: ["high", "medium", "low"],
+                  description: "Impact-based priority",
+                },
               },
             }),
             execute: async ({ title, description, priority }) => {
@@ -260,8 +421,31 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
                 title,
                 description,
                 priority,
-              });
-              return { success: true, todoId: id, created: title };
+              })
+              return { success: true, todoId: id, created: title }
+            },
+          }),
+
+          complete_action_item: tool({
+            description:
+              "Mark an existing action item in this conversation as completed. Use list_action_items first if the user did not provide a clear item.",
+            inputSchema: jsonSchema<{ actionItemId: string }>({
+              type: "object",
+              required: ["actionItemId"],
+              properties: {
+                actionItemId: {
+                  type: "string",
+                  description: "Action item id from list_action_items",
+                },
+              },
+            }),
+            execute: async ({ actionItemId }) => {
+              await ctx.runMutation(internal.agentTodos.completeFromAgent, {
+                businessId: args.businessId,
+                threadId: args.threadId,
+                id: actionItemId as Id<"agentTodos">,
+              })
+              return { success: true, completed: actionItemId }
             },
           }),
 
@@ -272,24 +456,34 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
               type: "object",
               required: ["query"],
               properties: {
-                query: { type: "string", description: "Focused web research query" },
+                query: {
+                  type: "string",
+                  description: "Focused web research query",
+                },
               },
             }),
             execute: async ({ query }) => {
-              if (!thread.tipId) return { success: false, error: "This conversation is not attached to a tip." };
-              const reportId = await ctx.runMutation(api.researchReports.create, {
-                businessId: args.businessId,
-                tipId: thread.tipId,
-                query,
-              });
+              if (!thread.tipId)
+                return {
+                  success: false,
+                  error: "This conversation is not attached to a tip.",
+                }
+              const reportId = await ctx.runMutation(
+                api.researchReports.create,
+                {
+                  businessId: args.businessId,
+                  tipId: thread.tipId,
+                  query,
+                }
+              )
               await ctx.runAction(api.ai.research.run, {
                 businessId: args.businessId,
                 tipId: thread.tipId,
                 reportId,
                 query,
                 model: modelId,
-              });
-              return { success: true, reportId, query };
+              })
+              return { success: true, reportId, query }
             },
           }),
 
@@ -297,8 +491,8 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
             description:
               "Draft and save an email for the active tip. The owner will review and explicitly approve the final recipients, subject, and body before it can be sent.",
             inputSchema: jsonSchema<{
-              recipients: string[];
-              instructions: string;
+              recipients: string[]
+              instructions: string
             }>({
               type: "object",
               required: ["recipients", "instructions"],
@@ -306,40 +500,48 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
                 recipients: {
                   type: "array",
                   items: { type: "string" },
-                  description: "Final recipient email addresses supplied by the user",
+                  description:
+                    "Final recipient email addresses supplied by the user",
                 },
-                instructions: { type: "string", description: "Purpose, tone, and content for the email" },
+                instructions: {
+                  type: "string",
+                  description: "Purpose, tone, and content for the email",
+                },
               },
             }),
             execute: async ({ recipients, instructions }) => {
-              if (!thread.tipId) return { success: false, error: "This conversation is not attached to a tip." };
+              if (!thread.tipId)
+                return {
+                  success: false,
+                  error: "This conversation is not attached to a tip.",
+                }
               const drafted = await ctx.runAction(api.ai.email.draft, {
                 businessId: args.businessId,
                 tipId: thread.tipId,
                 instructions,
                 model: modelId,
-              });
+              })
               const draftId = await ctx.runMutation(api.emailDrafts.create, {
                 businessId: args.businessId,
                 tipId: thread.tipId,
                 recipients,
                 subject: drafted.subject,
                 body: drafted.body,
-              });
-              return { success: true, draftId, subject: drafted.subject };
+              })
+              return { success: true, draftId, subject: drafted.subject }
             },
           }),
         },
-      });
+      })
 
-      assistantContent = result.text;
-      inputTokens = result.usage.inputTokens ?? 0;
-      outputTokens = result.usage.outputTokens ?? 0;
+      assistantContent = result.text
+      inputTokens = result.usage.inputTokens ?? 0
+      outputTokens = result.usage.outputTokens ?? 0
     } catch (err) {
-      isError = true;
-      errorMessage = err instanceof Error ? err.message : "Unknown error";
+      isError = true
+      errorMessage = err instanceof Error ? err.message : "Unknown error"
       assistantContent =
-        "I encountered an error processing your request. Please try again.";
+        "I encountered an error processing your request. Please try again."
     }
 
     const messageId: Id<"chatMessages"> = await ctx.runMutation(
@@ -354,17 +556,17 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
         outputTokens,
         isError,
         errorMessage,
-      },
-    );
+      }
+    )
 
     if (args.kickoff) {
       await ctx.runMutation(internal.chatThreads.finishKickoff, {
         threadId: args.threadId,
         status: isError ? "failed" : "completed",
         error: errorMessage,
-      });
+      })
     }
 
-    return { content: assistantContent, messageId, isError };
+    return { content: assistantContent, messageId, isError }
   },
-});
+})

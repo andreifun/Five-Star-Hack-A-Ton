@@ -40,7 +40,7 @@ export const run = action({
       );
       const sourceText = sources.map((source, index) => `[${index + 1}] ${source.title}\n${source.snippet ?? ""}\n${source.url}`).join("\n\n");
       const { text } = await generateText({
-        model: gateway(args.model ?? "anthropic/claude-sonnet-4-5"),
+        model: gateway(args.model ?? "anthropic/claude-sonnet-4.6"),
         system: "Write a concise, practical research report. Cite claims with bracketed source numbers such as [1]. Use only the supplied sources.",
         prompt: `Tip: ${tip.title}\nContext: ${tip.content}\nResearch query: ${args.query}\n\nSources:\n${sourceText}`,
         maxOutputTokens: 1400,

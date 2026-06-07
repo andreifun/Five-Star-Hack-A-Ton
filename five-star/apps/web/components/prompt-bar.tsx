@@ -15,9 +15,9 @@ import { ArrowUp, ImagePlus, X } from "lucide-react"
 
 export const MODELS = [
   { id: "minimax/minimax-m3", label: "MiniMax M3" },
-  { id: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet" },
-  { id: "openai/gpt-4o", label: "GPT-4o" },
-  { id: "google/gemini-2.0-flash", label: "Gemini Flash" },
+  { id: "anthropic/claude-sonnet-4.6", label: "Claude Sonnet 4.6" },
+  { id: "openai/gpt-5.5", label: "GPT-5.5" },
+  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
 ]
 
 export interface PromptBarSubmitPayload {
@@ -71,7 +71,7 @@ export function PromptBar({
   }
 
   return (
-    <div className="shrink-0 bg-linear-to-b from-transparent to-background px-4 pb-4 pt-4">
+    <div className="shrink-0 bg-linear-to-b from-transparent to-background px-2 pt-2 pb-2 sm:px-4 sm:pt-4 sm:pb-4">
       <input
         ref={fileInputRef}
         type="file"
@@ -91,7 +91,10 @@ export function PromptBar({
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
               {images.map((img, i) => (
-                <div key={i} className="group relative size-14 overflow-hidden rounded-lg">
+                <div
+                  key={i}
+                  className="group relative size-14 overflow-hidden rounded-lg"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={URL.createObjectURL(img)}
@@ -122,7 +125,7 @@ export function PromptBar({
             <div className="flex items-center gap-1">
               {toolbarLeft}
               <Select value={model} onValueChange={setModel}>
-                <SelectTrigger className="h-7 gap-1 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus:ring-0 [&>svg]:size-3">
+                <SelectTrigger className="h-7 max-w-36 gap-1 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus:ring-0 [&>span]:truncate [&>svg]:size-3">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent align="start">

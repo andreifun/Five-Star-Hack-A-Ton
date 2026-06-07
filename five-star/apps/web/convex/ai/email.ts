@@ -14,7 +14,7 @@ export const draft = action({
     const tip = await ctx.runQuery(api.tips.getById, { tipId: args.tipId });
     if (!tip || tip.businessId !== args.businessId) throw new Error("Tip not found");
     const { text } = await generateText({
-      model: gateway(args.model ?? "anthropic/claude-sonnet-4-5"),
+      model: gateway(args.model ?? "anthropic/claude-sonnet-4.6"),
       system: "Draft a professional plain-text business email. Return only JSON with subject and body string fields.",
       prompt: `Tip: ${tip.title}\nContext: ${tip.content}\nInstructions: ${args.instructions}`,
       maxOutputTokens: 900,

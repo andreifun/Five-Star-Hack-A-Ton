@@ -486,7 +486,7 @@ ${html.slice(0, 18000)}`,
       async function extractMenuFromImage(imageBytes: Uint8Array): Promise<MenuItem[]> {
         try {
           const { text: raw } = await generateText({
-            model: getGateway()("anthropic/claude-sonnet-4-5"),
+            model: getGateway()("anthropic/claude-sonnet-4.6"),
             messages: [
               {
                 role: "user",

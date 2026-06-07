@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, MessageSquare, Lightbulb, Star } from "lucide-react"
+import { LayoutDashboard, Lightbulb, MessageSquare, Star } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { useCurrentBusiness } from "@/components/business-context"
 
@@ -13,34 +13,42 @@ const TABS = [
   { segment: "chat", label: "Assistant", icon: MessageSquare },
 ] as const
 
-export function BusinessNav() {
+export function BusinessNav({ mobile = false }: { mobile?: boolean }) {
   const { businessId } = useCurrentBusiness()
   const pathname = usePathname()
   const base = `/businesses/${businessId}`
 
   return (
-    <nav className="flex items-center gap-1">
+    <nav
+      className={mobile ? "grid grid-cols-4 gap-1" : "grid gap-1"}
+      aria-label="Business navigation"
+    >
       {TABS.map((tab) => {
         const href = tab.segment ? `${base}/${tab.segment}` : base
         const isActive =
-          tab.segment === ""
-            ? pathname === base
-            : pathname.startsWith(href)
+          tab.segment === "" ? pathname === base : pathname.startsWith(href)
         const Icon = tab.icon
 
         return (
           <Link
             key={tab.segment}
             href={href}
+            aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+              "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+              mobile && "flex-col gap-1 px-1 py-1.5 text-[10px]",
               isActive
-                ? "bg-muted text-foreground"
-                : "text-muted-foreground hover:text-foreground",
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
             )}
           >
-            <Icon className="size-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
+            <Icon
+              className={cn(
+                "size-4 transition-colors",
+                isActive ? "text-primary" : "group-hover:text-foreground"
+              )}
+            />
+            <span>{tab.label}</span>
           </Link>
         )
       })}

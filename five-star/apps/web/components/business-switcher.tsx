@@ -29,7 +29,10 @@ export function BusinessSwitcher() {
   const businesses = useQuery(api.businesses.listAllByCurrentUser)
   const removeBusiness = useMutation(api.businesses.remove)
 
-  const [pendingDelete, setPendingDelete] = useState<{ id: Id<"businesses">; name: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: Id<"businesses">
+    name: string
+  } | null>(null)
 
   async function handleConfirmDelete() {
     if (!pendingDelete) return
@@ -52,10 +55,10 @@ export function BusinessSwitcher() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="m-1 gap-1.5 border border-foreground/20 bg-foreground/10 font-semibold hover:bg-foreground/15 focus-visible:ring-0 focus-visible:border-foreground/20"
+            className="m-1 max-w-[calc(100vw-4.5rem)] gap-1.5 border border-foreground/20 bg-foreground/10 font-semibold hover:bg-foreground/15 focus-visible:border-foreground/20 focus-visible:ring-0 sm:max-w-64"
           >
-            {business?.name ?? "…"}
-            <ChevronDown className="size-3.5 opacity-60" />
+            <span className="truncate">{business?.name ?? "…"}</span>
+            <ChevronDown className="size-3.5 shrink-0 opacity-60" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
@@ -67,7 +70,7 @@ export function BusinessSwitcher() {
             >
               <span className="truncate">{b.name}</span>
               <button
-                className="ml-2 shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                className="ml-2 shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation()
                   setPendingDelete({ id: b._id, name: b.name })
@@ -87,15 +90,23 @@ export function BusinessSwitcher() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={!!pendingDelete} onOpenChange={(open) => { if (!open) setPendingDelete(null) }}>
+      <Dialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete &ldquo;{pendingDelete?.name}&rdquo;?</DialogTitle>
+            <DialogTitle>
+              Delete &ldquo;{pendingDelete?.name}&rdquo;?
+            </DialogTitle>
             <DialogDescription>
-              This will remove the business from your account. This action cannot be undone.
+              This will remove the business from your account. This action
+              cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2 mt-2">
+          <div className="mt-2 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setPendingDelete(null)}>
               Cancel
             </Button>

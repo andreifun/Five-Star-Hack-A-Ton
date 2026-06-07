@@ -40,7 +40,7 @@ function FilterChip({
         "rounded-full border px-3 py-1 text-sm capitalize transition-colors",
         active
           ? "border-foreground bg-foreground text-background"
-          : "text-muted-foreground hover:text-foreground",
+          : "text-muted-foreground hover:text-foreground"
       )}
     >
       {children}
@@ -56,12 +56,12 @@ export default function ReviewsPage() {
   const { results, status, loadMore } = usePaginatedQuery(
     api.reviews.listByBusiness,
     { businessId, source, sentiment },
-    { initialNumItems: 20 },
+    { initialNumItems: 20 }
   )
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-5 p-6">
+      <div className="mx-auto max-w-3xl space-y-5 p-4 sm:p-6">
         <h1 className="text-xl font-semibold">Reviews</h1>
 
         <div className="space-y-2">
