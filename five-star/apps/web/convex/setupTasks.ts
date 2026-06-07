@@ -19,6 +19,7 @@ const TASK_DEFINITIONS: Array<{
 export const createForBusiness = internalMutation({
   args: {
     businessId: v.id("businesses"),
+    businessType: v.string(),
     hasLocation: v.boolean(),
     hasWebsite: v.boolean(),
     hasGoogle: v.boolean(),
@@ -30,7 +31,8 @@ export const createForBusiness = internalMutation({
       classify_location: args.hasLocation,
       fetch_website: args.hasWebsite,
       fetch_google: args.hasGoogle,
-      fetch_booking: args.hasBooking,
+      // Booking.com is only relevant for hotels
+      fetch_booking: args.hasBooking && args.businessType === "hotel",
     };
 
     for (const def of TASK_DEFINITIONS) {
