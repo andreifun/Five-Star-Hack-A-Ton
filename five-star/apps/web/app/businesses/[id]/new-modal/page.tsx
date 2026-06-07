@@ -1,7 +1,6 @@
-"use client"
+import { redirect } from "next/navigation"
 
-import { TipsKanbanModal } from "@/components/tips-kanban-modal"
-
-export default function NewModalPage() {
-  return <TipsKanbanModal />
+export default async function LegacyKanbanRedirect({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  redirect(`/businesses/${id}`)
 }

@@ -167,3 +167,14 @@ export const getById = query({
     return tip;
   },
 });
+
+export const getWorkspace = query({
+  args: { tipId: v.id("tips") },
+  handler: async (ctx, args) => {
+    const tip = await ctx.db.get(args.tipId);
+    if (!tip) return null;
+    await requireBusinessOwner(ctx, tip.businessId);
+    const sourceReviews = await Promise.all((tip.sourceReviewIds ?? []).map((id) => ctx.db.get(id)));
+    return { tip, sourceReviews: sourceReviews.filter((review) => review !== null) };
+  },
+});

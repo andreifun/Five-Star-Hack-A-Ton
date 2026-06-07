@@ -1,6 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "AI_GATEWAY_API_KEY",
+    "SERPAPI_API_KEY",
+    "RESEND_API_KEY",
+    "EMAIL_FROM"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

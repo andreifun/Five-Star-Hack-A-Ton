@@ -199,15 +199,26 @@ export default defineSchema({
 
   chatThreads: defineTable({
     businessId: v.id("businesses"),
+    tipId: v.optional(v.id("tips")),
     title: v.string(),
     isArchived: v.boolean(),
     lastMessageAt: v.optional(v.number()),
     messageCount: v.number(),
     context: v.optional(v.string()),
+    kickoffStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+      ),
+    ),
+    kickoffError: v.optional(v.string()),
   })
     .index("by_businessId", ["businessId"])
     .index("by_businessId_and_isArchived", ["businessId", "isArchived"])
-    .index("by_businessId_and_lastMessageAt", ["businessId", "lastMessageAt"]),
+    .index("by_businessId_and_lastMessageAt", ["businessId", "lastMessageAt"])
+    .index("by_tipId", ["tipId"]),
 
   setupTasks: defineTable({
     businessId: v.id("businesses"),
@@ -260,6 +271,7 @@ export default defineSchema({
   agentTodos: defineTable({
     businessId: v.id("businesses"),
     threadId: v.id("chatThreads"),
+    tipId: v.optional(v.id("tips")),
     title: v.string(),
     description: v.string(),
     priority: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
@@ -267,5 +279,56 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("by_businessId", ["businessId"])
-    .index("by_businessId_and_isCompleted", ["businessId", "isCompleted"]),
+    .index("by_businessId_and_isCompleted", ["businessId", "isCompleted"])
+    .index("by_threadId", ["threadId"])
+    .index("by_tipId", ["tipId"]),
+
+  researchReports: defineTable({
+    businessId: v.id("businesses"),
+    tipId: v.id("tips"),
+    query: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    sources: v.array(v.object({
+      title: v.string(),
+      url: v.string(),
+      snippet: v.optional(v.string()),
+    })),
+    summary: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tipId", ["tipId"])
+    .index("by_businessId", ["businessId"]),
+
+  emailDrafts: defineTable({
+    businessId: v.id("businesses"),
+    tipId: v.id("tips"),
+    recipients: v.array(v.string()),
+    subject: v.string(),
+    body: v.string(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("approved"),
+      v.literal("sending"),
+      v.literal("sent"),
+      v.literal("failed"),
+    ),
+    approvedRecipients: v.optional(v.array(v.string())),
+    approvedSubject: v.optional(v.string()),
+    approvedBody: v.optional(v.string()),
+    providerId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    approvedAt: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+  })
+    .index("by_tipId", ["tipId"])
+    .index("by_businessId", ["businessId"]),
 });

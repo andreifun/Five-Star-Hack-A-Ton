@@ -13,6 +13,7 @@ export const sendMessage = action({
     businessId: v.id("businesses"),
     content: v.string(),
     model: v.optional(v.string()),
+    kickoff: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
@@ -21,6 +22,7 @@ export const sendMessage = action({
       businessId: Id<"businesses">;
       content: string;
       model?: string;
+      kickoff?: boolean;
     },
   ): Promise<{ content: string; messageId: Id<"chatMessages">; isError: boolean }> => {
     const modelId = args.model ?? "anthropic/claude-sonnet-4-5";
@@ -40,13 +42,17 @@ export const sendMessage = action({
       throw new Error("Thread not found or does not belong to this business");
     }
 
-    await ctx.runMutation(internal.chatMessages.addMessage, {
-      threadId: args.threadId,
-      businessId: args.businessId,
-      role: "user",
-      content: args.content,
-      isError: false,
-    });
+    if (args.kickoff && !thread.tipId) throw new Error("Kickoff requires a tip thread");
+
+    if (!args.kickoff) {
+      await ctx.runMutation(internal.chatMessages.addMessage, {
+        threadId: args.threadId,
+        businessId: args.businessId,
+        role: "user",
+        content: args.content,
+        isError: false,
+      });
+    }
 
     const [history, recentReviewsPage, pendingTipsPage] = await Promise.all([
       ctx.runQuery(internal.chatMessages.getRecentForContext, {
@@ -67,6 +73,10 @@ export const sendMessage = action({
     const metrics = businessWithMetrics.metrics;
     const recentReviews = (recentReviewsPage as { page: Doc<"reviews">[] }).page;
     const pendingTips = (pendingTipsPage as { page: Doc<"tips">[] }).page;
+    const tipWorkspace = thread.tipId
+      ? await ctx.runQuery(api.tips.getWorkspace, { tipId: thread.tipId }) as { sourceReviews: Doc<"reviews">[] } | null
+      : null;
+    const sourceReviews = tipWorkspace?.sourceReviews ?? [];
 
     const systemPrompt = `You are an expert hospitality consultant and business intelligence assistant for ${businessWithMetrics.name}, a ${businessWithMetrics.type} business. You help the owner deeply understand customer feedback, identify trends, and take action.
 
@@ -87,6 +97,14 @@ Current Performance:
 - Top review topics: ${metrics?.topTopics.slice(0, 8).join(", ") || "None yet"}
 - Open improvement tips: ${metrics?.pendingTipsCount ?? 0}
 
+${thread.tipId ? `Active Tip Workspace:
+- Title: ${thread.title}
+- Context: ${thread.context ?? "No additional context"}
+- Keep the conversation focused on executing this tip unless the user asks otherwise.
+- Source reviews attached to this tip:
+${sourceReviews.length > 0 ? sourceReviews.map((r) => `  - [${r.rating}★ ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "  - None attached"}
+` : ""}
+
 Recent Reviews (last 10):
 ${recentReviews.length > 0 ? recentReviews.map((r: Doc<"reviews">) => `[${r.rating}★ ${r.sentiment ?? ""} · ${r.source}] ${r.text ?? "(no text)"}`).join("\n") : "No reviews yet."}
 
@@ -96,8 +114,17 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
 ## Instructions
 - Use your tools proactively. If the user asks about specific topics, sentiment, or ratings — search for those reviews rather than guessing.
 - When you identify a concrete action the owner should take, create a todo item for them using create_todo.
+- When current external information would help execute the active tip, run research and save the cited report.
+- When the user asks for an email, draft and save it. Never send email yourself; the owner must explicitly approve the final draft first.
 - Reference specific review data in your analysis.
 - Be direct, specific, and practical. Keep responses concise.`;
+    const kickoffInstructions = args.kickoff
+      ? `\n\n## Mandatory kickoff workflow
+- Before responding, call run_research at least once with a focused query relevant to the active tip.
+- Inspect relevant reviews using search_reviews or get_low_rated_reviews when useful.
+- Create a practical ordered action plan by calling create_todo for each concrete task. Create 3-7 todos unless the issue genuinely needs fewer.
+- After tool calls, summarize the evidence, research findings, and execution plan.`
+      : "";
 
     const messages: { role: "user" | "assistant"; content: string }[] = history
       .filter((m: Doc<"chatMessages">) => m.role === "user" || m.role === "assistant")
@@ -105,6 +132,7 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
         role: m.role as "user" | "assistant",
         content: m.content,
       }));
+    if (args.kickoff) messages.push({ role: "user", content: args.content });
 
     let assistantContent = "";
     let inputTokens = 0;
@@ -115,10 +143,10 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
     try {
       const result = await generateText({
         model: gateway(modelId),
-        system: systemPrompt,
+        system: systemPrompt + kickoffInstructions,
         messages,
         maxOutputTokens: 2048,
-        stopWhen: stepCountIs(5),
+        stopWhen: stepCountIs(args.kickoff ? 12 : 5),
         tools: {
           search_reviews: tool({
             description:
@@ -210,7 +238,7 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
 
           create_todo: tool({
             description:
-              "Create an action item card for the business owner to see and complete. The todo appears in a panel on screen. Use this whenever you identify a specific, concrete task the owner should do — e.g. after analysing reviews, identifying a training need, or spotting a quick win.",
+              "Create a persisted action item for the active tip. Use this whenever you identify a specific, concrete task the owner should do.",
             inputSchema: jsonSchema<{
               title: string;
               description: string;
@@ -228,11 +256,77 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
               const id = await ctx.runMutation(internal.agentTodos.create, {
                 businessId: args.businessId,
                 threadId: args.threadId,
+                tipId: thread.tipId,
                 title,
                 description,
                 priority,
               });
               return { success: true, todoId: id, created: title };
+            },
+          }),
+
+          run_research: tool({
+            description:
+              "Research current external information with web search, save a cited report for the active tip, and show it in the conversation. Use only when the thread belongs to a tip.",
+            inputSchema: jsonSchema<{ query: string }>({
+              type: "object",
+              required: ["query"],
+              properties: {
+                query: { type: "string", description: "Focused web research query" },
+              },
+            }),
+            execute: async ({ query }) => {
+              if (!thread.tipId) return { success: false, error: "This conversation is not attached to a tip." };
+              const reportId = await ctx.runMutation(api.researchReports.create, {
+                businessId: args.businessId,
+                tipId: thread.tipId,
+                query,
+              });
+              await ctx.runAction(api.ai.research.run, {
+                businessId: args.businessId,
+                tipId: thread.tipId,
+                reportId,
+                query,
+                model: modelId,
+              });
+              return { success: true, reportId, query };
+            },
+          }),
+
+          draft_email: tool({
+            description:
+              "Draft and save an email for the active tip. The owner will review and explicitly approve the final recipients, subject, and body before it can be sent.",
+            inputSchema: jsonSchema<{
+              recipients: string[];
+              instructions: string;
+            }>({
+              type: "object",
+              required: ["recipients", "instructions"],
+              properties: {
+                recipients: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Final recipient email addresses supplied by the user",
+                },
+                instructions: { type: "string", description: "Purpose, tone, and content for the email" },
+              },
+            }),
+            execute: async ({ recipients, instructions }) => {
+              if (!thread.tipId) return { success: false, error: "This conversation is not attached to a tip." };
+              const drafted = await ctx.runAction(api.ai.email.draft, {
+                businessId: args.businessId,
+                tipId: thread.tipId,
+                instructions,
+                model: modelId,
+              });
+              const draftId = await ctx.runMutation(api.emailDrafts.create, {
+                businessId: args.businessId,
+                tipId: thread.tipId,
+                recipients,
+                subject: drafted.subject,
+                body: drafted.body,
+              });
+              return { success: true, draftId, subject: drafted.subject };
             },
           }),
         },
@@ -262,6 +356,14 @@ ${pendingTips.length > 0 ? pendingTips.map((t: Doc<"tips">) => `[${t.priority}] 
         errorMessage,
       },
     );
+
+    if (args.kickoff) {
+      await ctx.runMutation(internal.chatThreads.finishKickoff, {
+        threadId: args.threadId,
+        status: isError ? "failed" : "completed",
+        error: errorMessage,
+      });
+    }
 
     return { content: assistantContent, messageId, isError };
   },
